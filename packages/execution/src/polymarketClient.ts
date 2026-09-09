@@ -1,5 +1,6 @@
 import { getIsDryRun } from './dryRun.js';
 import type { OrderParams, OrderStatus, Market } from './types.js';
+import type { SignedOrderPayload } from './polymarketSigner.js';
 
 export interface PolymarketClientConfig {
   /** URL de base de l'API CLOB. Par defaut la prod publique. */
@@ -8,6 +9,18 @@ export interface PolymarketClientConfig {
   fetcher?: typeof fetch;
   /** Controle dry-run ; par defaut lit le flag global de @pallas/core. */
   isDryRun?: () => boolean;
+  /**
+   * Passe a true UNIQUEMENT apres avoir valide le schema EIP-712 et le format
+   * wire contre l'API CLOB live. Tant que false, placeOrder refuse (fail-closed).
+   */
+  signedOrdersValidated?: boolean;
+}
+
+export class SignatureSchemaNotValidatedError extends Error {
+  constructor() {
+    super('schema de signature Polymarket non valide en live : ordre refusé (fail-closed)');
+    this.name = 'SignatureSchemaNotValidatedError';
+  }
 }
 
 export interface MarketSummary {
@@ -81,12 +94,14 @@ export class PolymarketClient {
   private readonly baseUrl: string;
   private readonly fetcher: typeof fetch;
   private readonly isDryRunFn: () => boolean;
+  private readonly signedOrdersValidated: boolean;
   private readonly maxRetries: number;
 
   constructor(config: PolymarketClientConfig = {}) {
     this.baseUrl = config.baseUrl ?? 'https://clob.polymarket.com';
     this.fetcher = config.fetcher ?? fetch;
     this.isDryRunFn = config.isDryRun ?? getIsDryRun;
+    this.signedOrdersValidated = config.signedOrdersValidated ?? false;
     this.maxRetries = 2;
   }
 
@@ -142,15 +157,22 @@ export class PolymarketClient {
     };
   }
 
-  /** Place un ordre. ECRITURE : dry-run par defaut (ne part jamais en dry-run). */
-  async placeOrder(params: OrderParams): Promise<OrderResult> {
+  /**
+   * Place un ordre. ECRITURE : dry-run par defaut (ne part jamais en dry-run).
+   * En mode live, un payload signe (`buildSignedOrderPayload`) est requis et le
+   * flag `signedOrdersValidated` doit etre a true (fail-closed sinon).
+   */
+  async placeOrder(params: OrderParams, signed?: SignedOrderPayload): Promise<OrderResult> {
     if (this.isDryRunFn()) {
       await this.dryRunBlock('placeOrder');
+    }
+    if (!this.signedOrdersValidated || !signed) {
+      throw new SignatureSchemaNotValidatedError();
     }
     const res = await this.fetcher(`${this.baseUrl}/order`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(paramsToWire(params)),
+      body: JSON.stringify(signedOrderWire(signed, params)),
       signal: AbortSignal.timeout(10_000),
     });
     const data = await handleResponse(res) as Record<string, unknown>;
@@ -193,19 +215,15 @@ export class PolymarketClient {
   }
 }
 
-/** Serp-case attendu par l'API CLOB pour la creation d'ordre. */
-function paramsToWire(p: OrderParams): Record<string, unknown> {
+/** Format wire attendu par l'API CLOB pour un ordre signe (EIP-712). */
+function signedOrderWire(s: SignedOrderPayload, p: OrderParams): Record<string, unknown> {
   return {
-    market: p.marketId,
-    price: p.price,
-    size: p.size,
-    side: p.side,
-    token_id: p.tokenId ?? null,
-    lifetime: p.lifetime ?? null,
-    fee_rate_bps: p.feeRateBps ?? null,
-    nonce: p.nonce ?? null,
-    expire_time: p.expireTime ?? null,
-    signature: p.signature ?? null,
-    signature_type: p.signatureType ?? null,
+    order: s.order,
+    signature: s.signature,
+    owner: s.owner,
+    side: s.side,
+    price: s.price,
+    size: s.size,
+    token_id: p.tokenId ?? s.order.tokenId,
   };
 }

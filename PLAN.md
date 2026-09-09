@@ -189,11 +189,14 @@ en dry-run (`placeOrder`/`cancelOrder` jettent avant le premier `fetch`).
 `baseUrl=https://clob.polymarket.com`, `fetcher` injectable. Erreurs HTTP → throw avec code et corps tronque.
 
 ### 2.2 Credentials Polymarket
-- [ ] Stockage chiffre via @pallas/core
+- [x] Stockage chiffre via `polymarketSecrets` (AES-256-GCM + cle `PALLAS_CREDENTIAL_KEY`, fail-closed) — 8 tests
 - [ ] Wallet Solana (cle privee base58 ou JSON array)
-- [ ] API key Polymarket
-- [ ] Signature CLOB des ordres (HMAC/ECDSA) — condition pour lever le fail-closed
-- [ ] Tests : roundtrip, wrong key
+- [ ] API key Polymarket (stockage fait ; recuperation live a valider)
+- [x] Signature CLOB des ordres — `polymarketSigner` EIP-712 (domain + struct Order) + EIP-191 (api creds) ;
+      `buildSignedOrderPayload` (uSDC-6, taker zero, nonce aleatoire) ; recovery d'adresse ; crypto `@noble`. 10 tests
+- [x] **Fail-closed leve uniquement via `signedOrdersValidated: true`** — `placeOrder` refuse sans payload signe
+      + flag valide (schema non confirme en live pour l'instant)
+- [x] Tests : roundtrip, wrong key (secrets), determinisme/recovery (signer), gating client
 
 ### 2.3 Validation inter-paquets (NOUVELLE etape de session)
 - [x] Build workspace en **project references** : `tsc --build packages/core packages/risk packages/execution`
@@ -294,4 +297,10 @@ en dry-run (`placeOrder`/`cancelOrder` jettent avant le premier `fetch`).
 | 5 — CI/CD + docs | 1 sem |
 | **Total MVP** | **~10 sem** |
 
-*Avancement effectif : Phases 0-1 terminees (hors CI), Phase 2 adapter termine (creds + signature CLOB restent).*
+*Avancement effectif : Phases 0-2 presque terminees — **9 fichiers / 66 tests TS verts** + 37 Rust.
+Phase 2.2 : secrets et signature CLOB faits ; reste wallet Solana + API key live + confirmation schema live.*
+
+*Publication (session) : projet renomme **Pallas** — depot public **github.com/symbioticode/pallas**,
+arborescence `~/Projects/80_PALLAS/pallas`, scope npm `@pallas/*`, prefixe d'env `PALLAS_*`.
+Validation apres relocalisation : `cargo clean` obligatoire (artefacts de test compiles avec
+l'ancien chemin absolu), puis npm + cargo re-verts.*

@@ -1,5 +1,27 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { PolymarketClient } from './polymarketClient.js';
+import { PolymarketClient, SignatureSchemaNotValidatedError } from './polymarketClient.js';
+import type { SignedOrderPayload } from './polymarketSigner.js';
+
+const VALIDATED = (): SignedOrderPayload => ({
+  order: {
+    salt: '1',
+    maker: '0x0000000000000000000000000000000000000001',
+    signer: '0x0000000000000000000000000000000000000001',
+    taker: '0x0000000000000000000000000000000000000000',
+    tokenId: 'tok-yes',
+    makerAmount: '10000000',
+    takerAmount: '5000000',
+    expiration: '2000000000',
+    nonce: '424242',
+    feeRateBps: '0',
+    signatureType: 1,
+  },
+  signature: '0x' + 'ab'.repeat(65),
+  owner: '0x0000000000000000000000000000000000000001',
+  side: 'BUY',
+  price: '0.50',
+  size: '10',
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -78,25 +100,38 @@ describe('PolymarketClient writes (fail-closed en dry-run)', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it('placeOrder serialise le payload CLOB en mode live', async () => {
-    const fetcher = vi.fn(async () =>
+  it('placeOrder refuse sans flag signedOrdersValidated (fail-closed)', async () => {
+    const fetcher = vi.fn();
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, isDryRun: () => false });
+    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, VALIDATED())).
+      rejects.toBeInstanceOf(SignatureSchemaNotValidatedError);
+    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' })).
+      rejects.toBeInstanceOf(SignatureSchemaNotValidatedError);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('placeOrder serialise le payload signe CLOB en mode live valide', async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, init?: RequestInit) =>
       jsonResponse({ orderID: 'order-42', status: 'open' })
     );
-    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, isDryRun: () => false });
+    const c = new PolymarketClient({
+      baseUrl: 'https://fake.api',
+      fetcher,
+      isDryRun: () => false,
+      signedOrdersValidated: true,
+    });
     const res = await c.placeOrder({
       marketId: 'mkt-1',
       price: 0.5,
       size: 10,
       side: 'BUY',
       tokenId: 'tok-yes',
-    });
-    expect(fetcher).toHaveBeenCalledWith(
-      'https://fake.api/order',
-      expect.objectContaining({
-        method: 'POST',
-        body: expect.stringContaining('"side":"BUY"'),
-      })
-    );
+    }, VALIDATED());
+    const body = JSON.parse(String(fetcher.mock.calls[0][1]!.body));
+    expect(fetcher).toHaveBeenCalledWith('https://fake.api/order', expect.objectContaining({ method: 'POST' }));
+    expect(body.order.makerAmount).toBe('10000000');
+    expect(body.signature).toMatch(/^0x[0-9a-f]{130}$/);
+    expect(body.side).toBe('BUY');
     expect(res).toMatchObject({ orderId: 'order-42', status: 'open', dryRun: false });
   });
 
