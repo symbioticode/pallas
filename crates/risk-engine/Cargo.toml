@@ -1,0 +1,17 @@
+[package]
+name = "risk-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Risk engine CLI — VaR/CVaR, circuit breaker, Kelly, volatility regime, stress test, validateTrade pipeline"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+proptest = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
