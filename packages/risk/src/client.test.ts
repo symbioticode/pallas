@@ -15,7 +15,7 @@ const validTrade: TradeRequest = {
   side: 'buy',
   price: 0.6,
   quantity: 10,
-  est_value_usd: 60,
+  est_value_usd: 6, // coherent : price × quantity = 6 (PALLAS-M09)
   win_probability: 0.7,
   odds: 0.7,
   bankroll_usd: 10_000,

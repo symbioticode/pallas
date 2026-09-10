@@ -93,6 +93,25 @@ fn input_validation_errors(req: &TradeRequest) -> Vec<String> {
     errors
 }
 
+/// Tolérance de coherence `est_value_usd` ~ `price * quantity` (PALLAS-M09).
+///
+/// Deux sources d'ecart legitimes : (a) `est_value_usd` est arrondi au centime
+/// (2 decimales) par l'appelant -> erreur absolue <= 0.01 USD ; (b) l'epsilon
+/// flottant des produits refaits d'un cote et de l'autre est proportionnel aux
+/// montants. Tolérance = max(0.01 USD, 1% de price*quantity) : l'absolu absorbe
+/// l'arrondi centime (y compris pour les micro-trades), le relatif absorbe
+/// l'epsilon des grosses valeurs. Une soumission qui declare 10x en dessous de
+/// la vraie valeur (probe v0.2 : 0.9*1000=900 declaree 10, ecart 890) est
+/// rejetee — 890 >> max(0.01, 9.0).
+const VALUE_CONSISTENCY_TOL_ABS_USD: f64 = 0.01; // 1 centime (arrondi est_value_usd)
+const VALUE_CONSISTENCY_TOL_REL: f64 = 0.01; // 1% (epsilon flottant)
+
+/// Marge `KELLY_LIMIT` (PALLAS-M09) : 0.01 USD au-dessus du plafond recommande.
+/// Le plafond est expose a l'appelant ARRONDI au centime (`suggested_size_usd`) ;
+/// un appelant qui soumet exactement cette valeur `round(2)` doit passer.
+/// Au-dela du centime -> rejet strict (la taille suggeree devient contraignante).
+const KELLY_LIMIT_TOL_USD: f64 = 0.01;
+
 /// Evalue un trade contre toutes les portes de securite. Retourne la decision
 /// sans muter l'etat (le caller applique `apply` apres execution reelle).
 ///
@@ -159,7 +178,26 @@ pub fn validate_trade(req: &TradeRequest, state: &RiskState) -> TradeDecision {
         });
     }
 
-    // 4. Position max (taille d'ordre).
+    // 5. Coherence valeur metier : est_value_usd ~ price * quantity.
+    //    Comparer ces champs LIES (et chacun contre sa borne) ferme la faille
+    //    d'une valeur declaree sous le plafond alors que l'ordre coute plus.
+    let expected_value = req.price * req.quantity;
+    let value_tol = VALUE_CONSISTENCY_TOL_ABS_USD.max(expected_value.abs() * VALUE_CONSISTENCY_TOL_REL);
+    let value_consistent = (req.est_value_usd - expected_value).abs() <= value_tol;
+    gates.push(GateResult {
+        gate: "VALUE_CONSISTENCY".to_string(),
+        action: if value_consistent { GateAction::Allow } else { GateAction::Reject },
+        reason: if value_consistent {
+            format!("est_value_usd ${:.2} ~= price*quantity ${:.2}", req.est_value_usd, expected_value)
+        } else {
+            format!(
+                "est_value_usd ${:.2} incoherent avec price*quantity ${:.2} (hors tolérance ${:.2})",
+                req.est_value_usd, expected_value, value_tol
+            )
+        },
+    });
+
+    // 6. Position max (taille d'ordre).
     let within_size = req.est_value_usd <= req.max_order_usd;
     gates.push(GateResult {
         gate: "POSITION_LIMIT".to_string(),
@@ -174,7 +212,7 @@ pub fn validate_trade(req: &TradeRequest, state: &RiskState) -> TradeDecision {
         },
     });
 
-    // 5. Prix hors marche (absurde).
+    // 7. Prix hors marche (absurde).
     let sane_price = req.price > 0.0 && req.price <= 1.0; // marche binaire (0..1)
     gates.push(GateResult {
         gate: "PRICE_SANITY".to_string(),
@@ -182,7 +220,7 @@ pub fn validate_trade(req: &TradeRequest, state: &RiskState) -> TradeDecision {
         reason: format!("Price {} valid", req.price),
     });
 
-    // 6. Quantite positive.
+    // 8. Quantite positive.
     let positive_qty = req.quantity > 0.0;
     gates.push(GateResult {
         gate: "QUANTITY_POSITIVE".to_string(),
@@ -190,16 +228,29 @@ pub fn validate_trade(req: &TradeRequest, state: &RiskState) -> TradeDecision {
         reason: format!("Quantity {} {}", req.quantity, if positive_qty { "positive" } else { "<= 0" }),
     });
 
-    // 7. Kelly size ne depasse pas la bankroll.
+    // 9. Kelly : la taille demandee ne depasse pas la taille suggeree FINALE
+    //    (kelly fractionnaire x multiplicateur de regime de volatilite,
+    //    plafonnee a max_order_usd) — c'est exactement `suggested_size_usd`
+    //    avant arrondi centime. Avant M09, la porte comparait a bankroll_usd :
+    //    le moteur pouvait suggerer $50 et autoriser $9000. La contrainte
+    //    porte desormais sur recommended_size (+ marge centime documentee).
     let kelly = kelly_fraction(req.win_probability, req.odds, req.bankroll_usd, 0.5);
-    let kelly_ok = req.est_value_usd <= req.bankroll_usd;
+    let kelly_bound = (kelly.recommended_size * vol.size_multiplier).min(req.max_order_usd);
+    let kelly_ok = req.est_value_usd <= kelly_bound + KELLY_LIMIT_TOL_USD;
     gates.push(GateResult {
         gate: "KELLY_LIMIT".to_string(),
         action: if kelly_ok { GateAction::Allow } else { GateAction::Reject },
-        reason: format!("Kelly fraction half={:.4}, EV {}", kelly.half_kelly, if kelly.positive_ev { "positive" } else { "negative" }),
+        reason: if kelly_ok {
+            format!("Order ${:.2} <= kelly suggested ${:.2}", req.est_value_usd, kelly_bound)
+        } else {
+            format!(
+                "Order ${:.2} exceeds kelly suggested ${:.2}",
+                req.est_value_usd, kelly_bound
+            )
+        },
     });
 
-    // 8. VaR/CVaR sous le plafond de perte.
+    // 10. VaR/CVaR sous le plafond de perte.
     let var = calculate_at(&state.hist_pnls, 0.95);
     let cv = var.cvar;
     let var_ok = cv <= req.max_drawdown_usd * 0.5;
@@ -209,7 +260,7 @@ pub fn validate_trade(req: &TradeRequest, state: &RiskState) -> TradeDecision {
         reason: format!("CVaR ${:.2} {}", cv, if var_ok { "within limit" } else { "exceeds limit" }),
     });
 
-    // 9. Stress test — la perte max tolerable ne blesse pas la bankroll.
+    // 11. Stress test — la perte max tolerable ne blesse pas la bankroll.
     let stress = stress_portfolio(req.bankroll_usd, req.max_drawdown_usd);
     let worst_survival = stress.iter().all(|o| o.survices);
     gates.push(GateResult {
@@ -222,7 +273,7 @@ pub fn validate_trade(req: &TradeRequest, state: &RiskState) -> TradeDecision {
         },
     });
 
-    // 10. Confiance minimale.
+    // 12. Confiance minimale.
     let confidence_ok = req.confidence >= 0.5;
     gates.push(GateResult {
         gate: "MIN_CONFIDENCE".to_string(),
@@ -261,7 +312,7 @@ mod tests {
             side: "buy".to_string(),
             price: 0.6,
             quantity: 10.0,
-            est_value_usd: 60.0,
+            est_value_usd: 6.0, // coherent : price * quantity = 6 (M09)
             win_probability: 0.7,
             odds: 0.7,
             bankroll_usd: 10_000.0,
@@ -394,5 +445,87 @@ mod tests {
                 d.rejected_by
             );
         }
+    }
+
+    // --- PALLAS-M09 : coherence metier (audit v0.2 §4.1) ---
+    // Les 2 tests adversariaux portent le nom `audit_v0_2_rejects_*` pour la
+    // tracabilite. Ils ont ete ecrits AVANT la correction (baseline : ils
+    // echouent sur le code pre-M09, preuve reproduite — voir journal M09).
+
+    #[test]
+    fn audit_v0_2_rejects_incoherent_est_value_usd() {
+        // Probe : price=0.9 * quantity=1000 -> vraie valeur 900, mais
+        // est_value_usd=10 declaree pour passer sous le plafond POSITION_LIMIT.
+        let mut req = valid_req();
+        req.price = 0.9;
+        req.quantity = 1000.0;
+        req.est_value_usd = 10.0; // incoherent : 0.9*1000 = 900
+        req.max_order_usd = 1_000.0; // POSITION_LIMIT laisserait passer 10
+        let state = RiskState::new();
+        let d = validate_trade(&req, &state);
+        assert!(
+            !d.allowed,
+            "est_value_usd incoherent doit etre rejete (rejected_by={:?})",
+            d.rejected_by
+        );
+        assert!(d.rejected_by.contains(&"VALUE_CONSISTENCY".to_string()));
+    }
+
+    #[test]
+    fn audit_v0_2_rejects_est_above_kelly_recommended() {
+        // Probe : est_value_usd (4000) depasse la taille suggeree finale
+        // (kelly half ~1357 * mult 1.0, plafond max_order 5000) mais reste sous
+        // bankroll (10000) -> KELLY_LIMIT doit rejeter.
+        let mut req = valid_req();
+        req.win_probability = 0.7;
+        req.odds = 0.7;
+        req.bankroll_usd = 10_000.0;
+        req.price = 0.6;
+        req.quantity = 6666.666666666667; // 0.6 * qty = 4000.0 (coherent)
+        req.est_value_usd = 4_000.0;
+        req.max_order_usd = 5_000.0; // POSITION_LIMIT laisse passer 4000
+        let state = RiskState::new();
+        let d = validate_trade(&req, &state);
+        assert!(
+            !d.allowed,
+            "taille > kelly suggere doit etre rejetee (rejected_by={:?})",
+            d.rejected_by
+        );
+        assert!(
+            d.rejected_by.contains(&"KELLY_LIMIT".to_string()),
+            "rejected_by = {:?}",
+            d.rejected_by
+        );
+        assert!(!d.rejected_by.contains(&"POSITION_LIMIT".to_string()));
+    }
+
+    // Limites de tolerance — depassant, ces cas LEGITIMES restent acceptes.
+
+    #[test]
+    fn kelly_accepts_trade_at_suggested_size() {
+        // est_value_usd == suggested_size_usd (arrondi centime) doit passer :
+        // recommended ~1357 plafonne a max_order 1000 -> suggere 1000.0.
+        let mut req = valid_req();
+        req.price = 0.6;
+        req.quantity = 1666.6666666666667; // 0.6 * qty = 1000.0
+        req.est_value_usd = 1_000.0;
+        req.max_order_usd = 1_000.0;
+        let state = RiskState::new();
+        let d = validate_trade(&req, &state);
+        assert!(d.allowed, "taille = suggested doit passer, rejected_by={:?}", d.rejected_by);
+    }
+
+    #[test]
+    fn value_consistency_accepts_cent_rounding_micro_trade() {
+        // Micro trade : price 0.006 * qty 2 = 0.012, est arrondi au centime 0.01.
+        // La tolérance absolue de 1 centime (pas un pur 1% relatif) absorbe
+        // l'arrondi des petits montants.
+        let mut req = valid_req();
+        req.price = 0.006;
+        req.quantity = 2.0;
+        req.est_value_usd = 0.01;
+        let state = RiskState::new();
+        let d = validate_trade(&req, &state);
+        assert!(d.allowed, "rounded micro-trade doit passer, rejected_by={:?}", d.rejected_by);
     }
 }

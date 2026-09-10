@@ -42,7 +42,7 @@ fn valid_trade_json() -> serde_json::Value {
         "side": "buy",
         "price": 0.6,
         "quantity": 10.0,
-        "est_value_usd": 60.0,
+        "est_value_usd": 6.0, // coherent : price * quantity = 6 (M09)
         "win_probability": 0.7,
         "odds": 0.7,
         "bankroll_usd": 10_000.0,
@@ -84,7 +84,7 @@ fn cli_validate_returns_decision() {
         side: "buy".to_string(),
         price: 0.6,
         quantity: 10.0,
-        est_value_usd: 60.0,
+        est_value_usd: 6.0, // coherent : price * quantity = 6 (M09)
         win_probability: 0.7,
         odds: 0.7,
         bankroll_usd: 10_000.0,
@@ -151,7 +151,7 @@ fn full_pipeline_integrates() {
         side: "sell".to_string(),
         price: 0.4,
         quantity: 5.0,
-        est_value_usd: 100.0,
+        est_value_usd: 2.0, // coherent : 0.4 * 5 = 2 (avant M09 : 100.0, incoherent)
         win_probability: 0.6,
         odds: 1.5,
         bankroll_usd: 20_000.0,

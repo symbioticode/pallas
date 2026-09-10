@@ -23,6 +23,16 @@
 > Aucune nouvelle case ne doit être cochée `[x]` sans que le critère de succès correspondant de la
 > mission associée soit vérifié et journalisé (`mission-PALLAS-M0X-journal.md`).
 
+> **⚠️ AUDIT v0.2 (2026-09-09, `docs/AUDIT-PALLAS-v0.2.md`, gitignoré) — récupérations ciblées, 1 commit+push par mission**
+>
+> | Mission | Sujet | Statut |
+> |---|---|---|
+> | `PALLAS-M07` | Sandbox réseau fiable (sonde `realBwrap`, skip explicite, handler `server.listen`) | ✅ clôturée 2026-09-10 |
+> | `PALLAS-M08` | Wire CLOB V2 « `taker` » — comparaison test officiel (l'audit citait des repos **V1**) | ⏳ en cours |
+> | `PALLAS-M09` | Risk : cohérence `est_value_usd` ~ `price×quantity` + Kelly réellement contraignant | ✅ clôturée 2026-09-10 |
+> | `PALLAS-M10` | Frontières résiduelles : `OrderMismatchError`, `PALLAS_RISK_BIN`, `deriveApiKey`, `isDryRun` | ✅ clôturée 2026-09-10 |
+> | `PALLAS-M11` | CI réelle documentée + `PLAN.md` propre | ⏳ à faire |
+
 > **Decision technique clé (Rust via Nix, pas NAPI-RS)**
 > Le risk engine est critique (decide si un trade est execute) : on le veut en Rust pour la surete memoire
 > et la testabilite. Plutot qu'un bindings NAPI-RS (fragile, compile dans le pipe npm, multiplateforme),
@@ -132,7 +142,14 @@ pallas/
       (objectif 90%+ atteint globalement, pas module par module : main.rs 77%, volatility.rs 87%).
       Protection live operationnelle : validation stricte des entrees, kill switch reel, etat
       persistant (circuit breaker, volatilite) transporte entre appels, machine a etats
-      Open→HalfOpen→Closed, NaN traite — 50 tests Rust verts, voir PALLAS-M01, cloturee le 2026-09-09.**
+      Open→HalfOpen→Closed, NaN traite — 50 tests Rust verts, voir PALLAS-M01, cloturee le 2026-09-09.
+      Note additive PALLAS-M09 (cloturee 2026-09-10, ne rouvre PAS M01 — ecarts distincts decouverts par
+      l'audit v0.2) : coherence METIER inter-champs fermee — gate `VALUE_CONSISTENCY`
+      (`est_value_usd` ~ `price×quantity`, tolerance max(1¢, 1%) justifiee en commentaire) et
+      `KELLY_LIMIT` desormais CONTRAIGNANT sur la taille suggeree finale (`recommended_size` ×
+      multiplicateur de volatilite, plafonne `max_order_usd`) avec marge centime, plus seulement la
+      bankroll. 54 tests Rust verts, dont `audit_v0_2_rejects_*` reproduisant les 2 probes v0.2
+      (baseline "acceptees" pre-correctif capturee au journal M09).**
 - [x] Facade TS `@pallas/risk` qui appelle la CLI (contrat JSON stdin/stdout) — **fail-closed sur
       process/exit non-zero confirme ; depuis PALLAS-M04 (cloturee le 2026-09-09) la reponse JSON est
       VALIDEE a l'execution contre des schemas Zod du contrat reel (types.rs — serde snake_case) :
