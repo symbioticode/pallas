@@ -128,8 +128,10 @@ fournit pas. Décision : **la CI utilise le MÊME shell Nix que le dev**.
   (linker C), binutils, pkg-config, **bubblewrap**, **cargo-audit**, git. Commande quotidienne
   inchangée (`nix-shell`).
 - `ci.yml` : checkout + `DeterminateSystems/nix-installer-action@v23` +
-  `magic-nix-cache-action@v15`, puis `nix-shell --run "…"` pour les deux jobs. L'action
-  `actions-rust-lang/audit@v2` disparaît → `cargo audit` tourne dans le shell Nix.
+  `magic-nix-cache-action@v15`, puis `nix-shell --run "…"` pour les deux jobs. Le job TS
+  **compile le binaire `risk-engine` (`cargo build`, debug) avant `npm test`** — runner séparé du
+  job rust. L'action `actions-rust-lang/audit@v2` disparaît → `cargo audit` tourne dans le shell
+  Nix.
 - `sandbox.ts` : `locateBwrap()` cherche désormais aussi dans le **PATH** (le bwrap Nix vit dans
   `/nix/store/…-bubblewrap-*/bin`, absent des 3 chemins fixes). Fail-closed conservé : throw
   `MissingBwrapError` si absent partout.

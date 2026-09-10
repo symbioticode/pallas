@@ -53,9 +53,10 @@ npm run dry-run -- list-markets 5           # variante npm (le `--` sépare les 
 ## CI
 
 `.github/workflows/ci.yml` : deux jobs reposés sur le **shell Nix du repo** (`shell.nix` épinglé —
-le même environnement que le dev, y compris bubblewrap) : TypeScript `npm ci`, build, typecheck,
-test, `npm audit --audit-level=high` ; Rust `cargo test` + `cargo audit` via Nix. Seuil audit
-justifié dans `docs/mission/mission-PALLAS-M06-journal.md`.
+le même environnement que le dev, y compris bubblewrap) : TypeScript compile le binaire
+`risk-engine` puis `npm ci`, build, typecheck, test, `npm audit --audit-level=high` ; Rust
+`cargo test` + `cargo audit` via Nix. Seuil audit justifié dans
+`docs/mission/mission-PALLAS-M06-journal.md`.
 
 ## Documentation
 

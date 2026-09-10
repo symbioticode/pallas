@@ -63,7 +63,8 @@ implicitement permis (stdout/stderr renvoyés à l'appelant).
   bwrap n'est pas fourni par `ubuntu-latest` (4 tests sandbox) alors que le binaire Rust n'était
   jamais construit dans le job TypeScript (8 tests). Corrigé : la CI repose sur le **même shell
   Nix que le dev** (`shell.nix` épinglé : Node 22, Rust, linker C, **bubblewrap**, cargo-audit),
-  `cargo audit` tourne via Nix. Les tests d'isolation réseau se **skippent explicitement** si
+  le job TypeScript **compile le binaire `risk-engine` avant `npm test`** (runner séparé du job
+  rust), et `cargo audit` tourne via Nix. Les tests d'isolation réseau se **skippent explicitement** si
   bwrap est absent ou si le runner refuse l'unshare (sonde `realBwrap` dans `sandbox.test.ts`) —
   jamais d'exécution en clair. `npm audit --audit-level=high` : deux advisorys **modérées**
   assumées (`@vitest/mocker` path traversal, dev-only, non exploitable en CI). Upgrade Vitest 5 =

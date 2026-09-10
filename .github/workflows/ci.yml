@@ -21,6 +21,9 @@ jobs:
       # pour de vrai sur le runner SI l'unshare y est permis ; sinon ils se
       # skippent explicitement (sonde realBwrap dans sandbox.test.ts). Jamais
       # d'exécution en clair (fail-closed).
+      # Le pont risk→binaire exige crates/risk-engine/target/{release,debug} :
+      # job séparé du job rust (runner distinct) → build debug ici.
+      - run: nix-shell --run "cd crates/risk-engine && cargo build"
       - run: nix-shell --run "npm ci && npm run build && npm run typecheck && npm test"
       # Seuil 'high' — 2 advisorys modérées restent : @vitest/mocker (path traversal dans
       # le mock HTTP, dev-only, non-exploitable en CI car aucun test n'ouvre de mock URLs).
