@@ -6,12 +6,31 @@
  * - docs.polymarket.com/getting-started/api    (auth L1 ClobAuth + L2 HMAC headers)
  * - verification croisee DES digests via viem 2.56.3 (impl. de reference) : voir tests.
  *
+ * Sources officielles V2 (verifiees le 2026-09-10, PALLAS-M08) :
+ * - TypeScript clob-client-v2 @ 49083a618be70d6a86e15a94fac44037c3f7f616 (main identique) :
+ *   src/order-utils/model/ctfExchangeV2TypedData.ts (struct signee), src/types/ordersV2.ts
+ *   (orderToJsonV2), src/order-utils/model/orderDataV2.ts (OrderV2 sans champ taker).
+ * - Python py-clob-client-v2 @ main : order_utils/model/order_data_v2.py (order_to_json_v2
+ *   = 13 cles "order", sans aucun taker).
+ * - Rust   rs-clob-client-v2 @ main : src/clob/order_builder.rs (OrderV1 = V1 only avec
+ *   taker/nonce/feeRateBps ; OrderV2 versions 2|3 = 11 champs signes, sans taker).
+ *
+ * REFUTATION audit v0.2 (PALLAS-M08) : le `taker` cite par l'audit existe dans les clients
+ * V1 (polymarket-js, py-clob-client, rs-clob-client), PAS dans le wire V2. Le quota actuel
+ * n'emet aucun taker pour un ordre standard : Pallas est conforme (tests M08).
+ *
  * Schema V2 signe (11 champs, PAS de taker/nonce/feeRateBps/expiration) :
  *   Order(uint256 salt,address maker,address signer,uint256 tokenId,
  *         uint256 makerAmount,uint256 takerAmount,uint8 side,uint8 signatureType,
  *         uint256 timestamp,bytes32 metadata,bytes32 builder)
  *   domain : name "Polymarket CTF Exchange", version "2", chainId 137,
  *            verifyingContract = exchange (standard ou neg-risk selon le marche).
+ *
+ * SCOPE SIGNATURE (PALLAS-M08) : EOA (signatureType 0) uniquement valide et teste. Le champ
+ * `signatureType` est transmis tel quel (passthrough PROXY/SAFE/DEPOSIT_WALLET), mais le mode
+ * POLY_1271 des deposit wallets (signatureType 3, enveloppe 1271 des cles email/proxy) n'est
+ * PAS implemente : une signature non-EOA livree depuis ce module n'a pas la bonne forme et
+ * serait rejetee. Decision documentee docs/TRADING.md — hors MVP, PAS de validation live.
  *
  * GATE : tant que le schema n'a PAS ete valide contre l'API live, aucun ordre
  * signe n'est emis (fail-closed). Voir `schemaGate.ts` — plus AUCUN booléen de

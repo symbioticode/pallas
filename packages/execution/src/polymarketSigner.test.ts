@@ -387,6 +387,148 @@ test('la structure Order V2 ne contient plus taker/nonce/feeRateBps/expiration',
   expect(orderStructHash(fixedOrder())).toBeDefined();
 });
 
+// ------------------ PALLAS-M08 : comparaison wire aux clients officiels V2 ------------------
+// VERDICT (2026-09-10) : la premisse de l'audit v0.2 (champ `taker` dans le wire officiel V2)
+// est REFUTEE. L'audit citait les clients V1 (`polymarket-js`, `py-clob-client`,
+// `rs-clob-client`) : c'est dans le schema V1 que `taker`/`nonce`/`feeRateBps` existent.
+// Les clients V2 officiels n'emettent AUCUN `taker` pour un ordre standard :
+// - TS   Polymarket/clob-client-v2 @ 49083a618be70d6a86e15a94fac44037c3f7f616 (main actuel
+//        identique) : `orderToJsonV2` (src/types/ordersV2.ts) pose `taker: order.taker`, mais
+//        `OrderV2` (src/order-utils/model/orderDataV2.ts) n'a PAS de champ taker -> `undefined`
+//        -> cle jetee par JSON.stringify. Le wire reel n'a pas de taker.
+// - Py   Polymarket/py-clob-client-v2 @ main : `order_to_json_v2` (order_utils/model/
+//        order_data_v2.py) = 13 cles "order", sans aucun taker (le plus explicite).
+// - Rust Polymarket/rs-clob-client-v2 @ main : `OrderV1` (V1 only) a taker+nonce+feeRateBps ;
+//        `OrderV2` (versions 2|3, src/clob/order_builder.rs) = les 11 champs signes, sans taker
+//        (taker n'apparait que dans les corps RFQ, un flux separe, et dans les reponses).
+// Pallas emet le formulaire V2 conforme ; `signatureSchemaValidated` reste verrouillee false.
+
+// Struct signee officielle : src/order-utils/model/ctfExchangeV2TypedData.ts
+// (clob-client-v2 @ 49083a61, identique sur main) — 11 champs, meme type que Pallas.
+const OFFICIAL_CTF_EXCHANGE_V2_ORDER_STRUCT = [
+  { name: 'salt', type: 'uint256' },
+  { name: 'maker', type: 'address' },
+  { name: 'signer', type: 'address' },
+  { name: 'tokenId', type: 'uint256' },
+  { name: 'makerAmount', type: 'uint256' },
+  { name: 'takerAmount', type: 'uint256' },
+  { name: 'side', type: 'uint8' },
+  { name: 'signatureType', type: 'uint8' },
+  { name: 'timestamp', type: 'uint256' },
+  { name: 'metadata', type: 'bytes32' },
+  { name: 'builder', type: 'bytes32' },
+] as const;
+
+// Ensemble des cles du corps `order` chez les clients officiels V2 (cf. verdict ci-dessus) :
+// TS (orderToJsonV2, taker jete) = Py (order_to_json_v2) = Rust (OrderV2+expiration) => 13 cles.
+const OFFICIAL_V2_ORDER_KEYS = [
+  'salt', 'maker', 'signer', 'tokenId', 'makerAmount', 'takerAmount', 'side',
+  'signatureType', 'timestamp', 'expiration', 'metadata', 'builder', 'signature',
+] as const;
+
+// Transcription litterale du dict `order` de py-clob-client-v2 order_to_json_v2 (source ci-dessus),
+// calculee depuis les ENTREES brutes (pas depuis le payload Pallas) : c'est le corps de reference.
+// `signature` est asseree separement (depend de la cle) et le key-set complet des 13 cles est
+// verifie via OFFICIAL_V2_ORDER_KEYS sur le payload reel.
+// Exception documentee : le client Python emet `salt` en `int`, le client TS en `int` (parseInt),
+// le client Rust en string ; Pallas emet string (voir test M08 sur le type salt).
+function officialV2OrderBody(input: {
+  side: 'BUY' | 'SELL';
+  price: number;
+  size: number;
+  tokenId: bigint;
+  salt: bigint;
+  timestampMillis: bigint;
+  expiration?: string;
+  metadata?: string;
+  builder?: string;
+}): Record<string, string | number> {
+  const { makerAmount, takerAmount } = calculateOrderAmounts(input.side, input.price, input.size);
+  return {
+    salt: input.salt.toString(),
+    maker: MAKER,
+    signer: MAKER,
+    tokenId: input.tokenId.toString(),
+    makerAmount: makerAmount.toString(),
+    takerAmount: takerAmount.toString(),
+    side: input.side,
+    expiration: input.expiration ?? '0',
+    signatureType: 0,
+    timestamp: input.timestampMillis.toString(),
+    metadata: input.metadata ?? ZERO32,
+    builder: input.builder ?? ZERO32,
+  };
+}
+
+test('M08: la structure signee == CTF_EXCHANGE_V2_ORDER_STRUCT officiel (11 champs)', () => {
+  expect(POLYMARKET_ORDER_TYPES.Order).toEqual(OFFICIAL_CTF_EXCHANGE_V2_ORDER_STRUCT);
+});
+
+test('M08: wire BUY — corps identique au client officiel V2, aucune cle taker', () => {
+  const p = buildSignedOrderPayload(
+    { side: 'BUY', price: 0.52, size: 10, tokenId: TOKEN, salt: FIXED_SALT, timestampMillis: T_MILLIS },
+    MAKER,
+    PK_ONE,
+  );
+  const reference = officialV2OrderBody({
+    side: 'BUY', price: 0.52, size: 10, tokenId: TOKEN, salt: FIXED_SALT, timestampMillis: T_MILLIS,
+  });
+  const { signature, ...rest } = p.order;
+  expect(rest).toEqual(reference);
+  expect(signature).toMatch(/^0x[0-9a-f]{130}$/);
+  // ensemble de cles : exactement les 13 officielles, PAS de taker, aucun champ en plus.
+  expect(Object.keys(p.order).sort()).toEqual([...OFFICIAL_V2_ORDER_KEYS].sort());
+  expect('taker' in p.order).toBe(false);
+});
+
+test('M08: wire SELL — flux inverses, memes cles officielles, aucune cle taker', () => {
+  const p = buildSignedOrderPayload(
+    { side: 'SELL', price: 0.52, size: 10, tokenId: TOKEN, salt: FIXED_SALT, timestampMillis: T_MILLIS },
+    MAKER,
+    PK_ONE,
+  );
+  const reference = officialV2OrderBody({
+    side: 'SELL', price: 0.52, size: 10, tokenId: TOKEN, salt: FIXED_SALT, timestampMillis: T_MILLIS,
+  });
+  const { signature, ...rest } = p.order;
+  expect(rest).toEqual(reference);
+  expect(signature).toMatch(/^0x[0-9a-f]{130}$/);
+  expect(Object.keys(p.order).sort()).toEqual([...OFFICIAL_V2_ORDER_KEYS].sort());
+  expect('taker' in p.order).toBe(false);
+});
+
+test('M08: wire valides tous les champs optionnels (GTD, metadata, builder) vs officiel', () => {
+  const meta = '0x' + 'ab'.repeat(32);
+  const builder = '0x' + 'cd'.repeat(32);
+  const p = buildSignedOrderPayload(
+    {
+      side: 'BUY', price: 0.33, size: 3, tokenId: TOKEN, salt: FIXED_SALT, timestampMillis: T_MILLIS,
+      expirationSeconds: 2000000000n, metadata: meta, builder,
+    },
+    MAKER,
+    PK_ONE,
+  );
+  const reference = officialV2OrderBody({
+    side: 'BUY', price: 0.33, size: 3, tokenId: TOKEN, salt: FIXED_SALT, timestampMillis: T_MILLIS,
+    expiration: '2000000000', metadata: meta, builder,
+  });
+  const { signature, ...rest } = p.order;
+  expect(rest).toEqual(reference);
+  expect('taker' in p.order).toBe(false);
+});
+
+test('M08: salt emis en string — conforme au client Rust officiel (TS/Python emettent un nombre)', () => {
+  const p = buildSignedOrderPayload(
+    { side: 'BUY', price: 0.52, size: 10, tokenId: TOKEN, salt: FIXED_SALT, timestampMillis: T_MILLIS },
+    MAKER,
+    PK_ONE,
+  );
+  expect(typeof p.order.salt).toBe('string');
+  expect(Number(p.order.salt)).toBe(Number(FIXED_SALT));
+  // divergence entre les clients officiels eux-memes (TS/Python : nombre ; Rust : string) :
+  // Pallas suit le format string, sans perte de precision pour les salts < 2^53 (randomSalt).
+});
+
 // ------------------ PALLAS-M05 : zeroing des buffers de cle privee ------------------
 // Preuve : le signer travaille sur une COPIE interne zeroee — jamais sur la memoire
 // de l'appelant (Buffer/Uint8Array du caller intacts apres appel) — et ses vecteurs

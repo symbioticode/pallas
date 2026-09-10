@@ -28,7 +28,7 @@
 > | Mission | Sujet | Statut |
 > |---|---|---|
 > | `PALLAS-M07` | Sandbox réseau fiable (sonde `realBwrap`, skip explicite, handler `server.listen`) | ✅ clôturée 2026-09-10 |
-> | `PALLAS-M08` | Wire CLOB V2 « `taker` » — comparaison test officiel (l'audit citait des repos **V1**) | ⏳ en cours |
+> | `PALLAS-M08` | Wire CLOB V2 « `taker` » — comparaison test officiel (prémisse RÉFUTÉE : l'audit citait des repos **V1**, aucun client V2 n'émet `taker`) | ✅ clôturée 2026-09-10 |
 > | `PALLAS-M09` | Risk : cohérence `est_value_usd` ~ `price×quantity` + Kelly réellement contraignant | ✅ clôturée 2026-09-10 |
 > | `PALLAS-M10` | Frontières résiduelles : `OrderMismatchError`, `PALLAS_RISK_BIN`, `deriveApiKey`, `isDryRun` | ✅ clôturée 2026-09-10 |
 > | `PALLAS-M11` | CI réelle documentée + `PLAN.md` propre | ⏳ à faire |

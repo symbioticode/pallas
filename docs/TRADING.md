@@ -1,8 +1,8 @@
 # Trading — Pallas — comportement attendu
 
-**Date :** 9 septembre 2026 — état aligné sur le code réel (PALLAS-M01..M06).
-Sujet en lien : `packages/execution/src/polymarketClient.ts`, mission `PALLAS-M04`
-(validation runtime + retry + idempotence).
+**Date :** 10 septembre 2026 — état aligné sur le code réel (PALLAS-M01..M10).
+Sujet en lien : `packages/execution/src/polymarketClient.ts`, missions `PALLAS-M04`
+(validation runtime + retry + idempotence), `PALLAS-M08` (wire et scope signature).
 
 ## Scope MVP
 
@@ -36,6 +36,22 @@ L'API CLOB Polymarket **n'offre aucune clé d'idempotence** (corps POST `/order`
 `DELETE /order/{orderId}` est idempotent : annuler un ordre déjà annulé/inconnu est un
 no-op. Les erreurs transitoires (réseau, timeout, 5xx) sont donc retentées ; les erreurs
 4xx (404…) sont définitives et remontées telles quelles.
+
+## Scope signature et wire V2 (PALLAS-M08, 2026-09-10)
+
+- **Wire V2 conforme aux clients officiels** (`clob-client-v2`, `py-clob-client-v2`,
+  `rs-clob-client-v2` — sources et commits cités dans le journal M08) : le corps `order` du POST
+  `/order` a exactement les 13 clés officielles et **n'a pas de champ `taker`**. L'assertion de
+  l'audit v0.2 reposait sur les clients **V1** (`polymarket-js`, `py-clob-client`,
+  `rs-clob-client`) où `taker`/`nonce`/`feeRateBps` existent. Vérifié par comparaison directe
+  (tests M08 dans `polymarketSigner.test.ts`).
+- **Scope signature : EOA uniquement.** `signatureType` default = 0 (EOA) ; c'est le seul mode
+  validé et testé de bout en bout. Le champ est transmis tel quel si un appelant force
+  PROXY/SAFE/DEPOSIT_WALLET, mais **POLY_1271 (deposit wallet, signatureType 3) n'est pas
+  supporté** : l'enveloppe 1271 des wallets email/proxy n'est pas implémentée et une telle
+  signature serait refusée par l'exchange. Ne pas émettre d'ordre non-EOA avec ce module.
+- La validation du schéma contre une API live (testnet) reste une étape distincte, verrouillée
+  par `schemaGate` (`signatureSchemaValidated=false`).
 
 ## Règles de conduite
 
