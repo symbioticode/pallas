@@ -12,6 +12,24 @@ import {
   runSandboxed,
 } from './index.js';
 
+/**
+ * Les tests qui PROUVENT l'isolation nécessitent un bwrap réellement
+ * utilisable (présent + unshare permis par le noyau). Ce n'est pas toujours
+ * le cas (runner CI sans bwrap, hôte restreignant les user namespaces).
+ * Sonde : une vraie exécution sous bwrap. Si elle échoue, ces tests se
+ * SKIPPENT explicitement (test.runIf) — jamais exécutés en clair, jamais un
+ * faux rouge d'environnement. La preuve tourne là où bwrap est disponible.
+ */
+async function bwrapUsable(): Promise<boolean> {
+  try {
+    const res = await runSandboxed('python3', ['-c', 'pass'], { timeoutMs: 15_000 });
+    return res.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+const realBwrap = await bwrapUsable();
+
 afterEach(() => {
   delete process.env.PALLAS_SANDBOX_BIN;
 });
@@ -35,14 +53,14 @@ test('commande vide / inconnue rejetee sans exec', async () => {
   await expect(() => runSandboxed('bash', ['-c', 'echo pwned'])).rejects.toThrow(DeniedCommandError);
 });
 
-test('execute un binaire autorise sous bwrap', async () => {
+test.runIf(realBwrap)('execute un binaire autorise sous bwrap', async () => {
   const res = await runSandboxed('python3', ['-c', 'print(6*7)'], { timeoutMs: 15_000 });
   expect(res.sandboxed).toBe(true);
   expect(res.exitCode).toBe(0);
   expect(res.stdout.trim()).toMatch(/^42$/);
 });
 
-test('reseau isole : un service du HOST est invisible depuis le sandbox (preuve reelle)', async () => {
+test.runIf(realBwrap)('reseau isole : un service du HOST est invisible depuis le sandbox (preuve reelle)', async () => {
   // Un serveur tourne sur la boucle locale du HOST. Depuis le sandbox, le
   // namespace reseau isole ne fournit qu'une `lo` vide : la requete doit
   // echouer avec une exception reseau explicite, et le serveur ne doit
@@ -54,7 +72,15 @@ test('reseau isole : un service du HOST est invisible depuis le sandbox (preuve 
     res.writeHead(404);
     res.end();
   });
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  await new Promise<void>((resolve, reject) => {
+    // Durcissement (résolution M03) : une erreur de listen (ex. EPERM sur un
+    // hôte restrictif) doit échouer PROPREMENT — jamais un crash non capturé.
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
+  });
   const port = (server.address() as { port: number }).port;
 
   try {
@@ -94,7 +120,7 @@ test('test negatif : un echec d.INIT bwrap ne peut plus passer pour une isolatio
   ).rejects.toThrow(BwrapInitError);
 });
 
-test('resolveBinary durei : un binaire non executable dans PATH est rejete', async () => {
+test.runIf(realBwrap)('resolveBinary durei : un binaire non executable dans PATH est rejete', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'pallas-path-'));
   mkdirSync(join(dir, 'python3'), { recursive: true }); // un DOSSIER, pas un binaire
   writeFileSync(join(dir, 'python3b'), '#!/bin/sh\necho not-exec\n');
@@ -110,7 +136,7 @@ test('resolveBinary durei : un binaire non executable dans PATH est rejete', asy
   }
 });
 
-test('input passe a stdin', async () => {
+test.runIf(realBwrap)('input passe a stdin', async () => {
   const res = await runSandboxed('python3', ['-c', 'import sys; print(len(sys.stdin.read()))'], {
     input: 'hello',
     timeoutMs: 15_000,

@@ -99,3 +99,50 @@ pipeline. Le YAML a été validé (js-yaml) et `actions/checkout@v4`,
 
 - Upgrade Vitest 5 (à décider quand un besoin le justifie). Endpoint `GET /orders` (statut d'ordre)
   pour automatiser la réconciliation `AmbiguousOrderError` dans `docs/TRADING.md`.
+
+## Annexe — vérification RÉELLE sur runner (2026-09-10) (clôture du critère 1 du §6)
+
+Le critère 1 du §6 était reporté « à venir sur le premier push — runner public ». Verdict réel :
+**les deux premiers pushs (main) ont ÉCHOUÉ sur le runner** (`34431033605`, `34432276167`).
+L'optimisme du journal (§2 « plus simple que nix dans un runner », §6 « échec sur bug volontaire
+prouvé localement ») n'était pas vérifié sur l'environnement réel.
+
+### Échecs constatés
+
+- **Job rust** : `Unable to resolve action actions-rust-lang/audit@v2` — le dépôt
+  `actions-rust-lang/audit` n'a **aucun tag v2** (dernière release : `v1.2.7`). OOPS inscrit ici.
+- **Job TypeScript** — 12 tests échoués / 2 fichiers :
+  - `sandbox.test.ts` ×4 : `MissingBwrapError` — `ubuntu-latest` ne fournit pas bwrap ; et
+    « resolveBinary durci » échoue car `locateBwrap()` passe **avant** `resolveBinary()` (l'erreur
+    attendue `BinaryNotFoundError` devient `MissingBwrapError`).
+  - `risk/src/client.test.ts` ×8 : `MissingBinaryError` — le binaire `risk-engine` n'est jamais
+    construit dans le job TS (le test dépend de `crates/risk-engine/target/{release,debug}`).
+  - Avertissement non bloquant : Node 20 deprecated (actions checkout@v4 / setup-node@v4).
+
+### Correctifs (inversion de la décision §2 « pas de nix dans GH Actions »)
+
+L'isolation réseau M03 ne peut se prouver que là où bwrap est présent ; un runner ubuntu n'en
+fournit pas. Décision : **la CI utilise le MÊME shell Nix que le dev**.
+
+- `shell.nix` épinglé (nixpkgs `db62aa7f…`, sha256 vérifié) : `nodejs_22`, rustc/cargo, gcc
+  (linker C), binutils, pkg-config, **bubblewrap**, **cargo-audit**, git. Commande quotidienne
+  inchangée (`nix-shell`).
+- `ci.yml` : checkout + `DeterminateSystems/nix-installer-action@v23` +
+  `magic-nix-cache-action@v15`, puis `nix-shell --run "…"` pour les deux jobs. L'action
+  `actions-rust-lang/audit@v2` disparaît → `cargo audit` tourne dans le shell Nix.
+- `sandbox.ts` : `locateBwrap()` cherche désormais aussi dans le **PATH** (le bwrap Nix vit dans
+  `/nix/store/…-bubblewrap-*/bin`, absent des 3 chemins fixes). Fail-closed conservé : throw
+  `MissingBwrapError` si absent partout.
+- `sandbox.test.ts` : sonde `realBwrap` (exécution réelle `python3 -c pass` sous bwrap) +
+  `test.runIf` → les 4 tests d'isolation se **skippent explicitement** si bwrap est absent OU si
+  le runner refuse l'unshare ; test réseau durci (`server.listen` : erreur → échec propre, plus
+  de crash non capturé — résolution du point M03 signalé par l'audit).
+- `docs/SECURITY.md` : réserve alignée sur cette vérification (échecs réels, environnement Nix,
+  skip explicite).
+
+### Verdict après correctif
+
+- Gratuitée : la preuve d'isolation réseau (le joyau M03) tourne **réellement sur le runner** si
+  l'unshare est permis, sinon skip visible — jamais exécution en clair.
+- Réserves restantes, inchangées et documentées : `isDryRun` injectable, `placeOrder` retry
+  manuel, 2 advisorys npm modérées (seuil `high`), passage Vitest 5 à décider.

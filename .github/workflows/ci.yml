@@ -5,35 +5,32 @@ on:
     branches: [main]
   pull_request:
 
+# CI reposée sur le MEME environnement Nix que le dev (shell.nix épinglé) :
+# Node 22, toolchain Rust + linker C, bubblewrap (isolation réseau) et
+# cargo-audit. Décision (annexe du journal M06, 2026-09-10) : l'action
+# actions-rust-lang/audit@v2 n'existe pas (dernière release v1.2.7) ;
+# `cargo audit` tourne désormais DANS le shell Nix.
 jobs:
   typescript:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run build
-      - run: npm run typecheck
-      - run: npm test
+      - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
+      # bwrap est fourni par le shell Nix : les tests d'isolation réseau tournent
+      # pour de vrai sur le runner SI l'unshare y est permis ; sinon ils se
+      # skippent explicitement (sonde realBwrap dans sandbox.test.ts). Jamais
+      # d'exécution en clair (fail-closed).
+      - run: nix-shell --run "npm ci && npm run build && npm run typecheck && npm test"
       # Seuil 'high' — 2 advisorys modérées restent : @vitest/mocker (path traversal dans
       # le mock HTTP, dev-only, non-exploitable en CI car aucun test n'ouvre de mock URLs).
       # Upgrade vers Vitest 5 (breaking change) documentée en piste future (mission PALLAS-M06).
-      - run: npm audit --audit-level=high
+      - run: nix-shell --run "npm audit --audit-level=high"
 
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      # Le crate risk-engine est 100% Rust pur (serde, serde_json, proptest) — aucune
-      # dépendance native C, pas besoin de nix-shell ni gcc. Le linker `cc` est fourni
-      # par le runner ubuntu-latest (build-essential).
-      - run: cargo test
-        working-directory: crates/risk-engine
-      # cargo audit (action actions-rust-lang/audit v2 : installe + met en cache cargo-audit).
-      - uses: actions-rust-lang/audit@v2
-        with:
-          working-directory: crates/risk-engine
+      - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
+      - run: nix-shell --run "cd crates/risk-engine && cargo test && cargo audit"

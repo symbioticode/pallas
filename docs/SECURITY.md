@@ -1,7 +1,7 @@
 # Sécurité — Pallas
 
 Statut : document complété par PALLAS-M03 (sandbox), PALLAS-M05 (mémoire) et PALLAS-M06
-(CI + reporting + réserves closes). Date : 2026-09-09.
+(CI + reporting + réserves closes + annexe de vérification réelle). Date : 2026-09-10.
 
 ## Signalement de vulnérabilité
 
@@ -58,9 +58,16 @@ implicitement permis (stdout/stderr renvoyés à l'appelant).
   existera (packages/agent, voir `PLAN.md` §1.2 réserve auditiée).
 - **packages/agent, gateway, ledger, skills** : absents — le code de sécurité qui les
   concerne (sanitizer câblé, ledger, auth de la gateway) n'est donc pas encore actif.
-- **CI** (PALLAS-M06) : `npm audit --audit-level=high` — deux advisorys **modérées** assumées
-  (`@vitest/mocker` path traversal, dev-only, non exploitable en CI). Upgrade Vitest 5 = piste
-  future documentée dans le journal M06.
+- **CI** (PALLAS-M06 + annexe de vérification réelle, 2026-09-10) : les deux premiers pushs sur
+  `main` ont ÉCHOUÉ sur le runner réel — l'action `actions-rust-lang/audit@v2` n'existe pas, et
+  bwrap n'est pas fourni par `ubuntu-latest` (4 tests sandbox) alors que le binaire Rust n'était
+  jamais construit dans le job TypeScript (8 tests). Corrigé : la CI repose sur le **même shell
+  Nix que le dev** (`shell.nix` épinglé : Node 22, Rust, linker C, **bubblewrap**, cargo-audit),
+  `cargo audit` tourne via Nix. Les tests d'isolation réseau se **skippent explicitement** si
+  bwrap est absent ou si le runner refuse l'unshare (sonde `realBwrap` dans `sandbox.test.ts`) —
+  jamais d'exécution en clair. `npm audit --audit-level=high` : deux advisorys **modérées**
+  assumées (`@vitest/mocker` path traversal, dev-only, non exploitable en CI). Upgrade Vitest 5 =
+  piste future (journal M06).
 
 ## Credentials en mémoire — garanties réelles (PALLAS-M05)
 

@@ -26,12 +26,13 @@ et n'est décrit nulle part comme « en cours ».
 ## Démarrage
 
 ```bash
-# shell Nix (toolchain Rust + linker C) puis :
+# tout l'environnement (Node 22, toolchain Rust + linker C, bubblewrap, cargo-audit) :
 nix-shell
 npm ci
 npm test          # pretest = tsc --build ; suite vitest
 npm run build
 cargo test        # crates/risk-engine
+cargo audit
 ```
 
 `npm run typecheck` = `tsc --build --dry`.
@@ -51,9 +52,10 @@ npm run dry-run -- list-markets 5           # variante npm (le `--` sépare les 
 
 ## CI
 
-`.github/workflows/ci.yml` : deux jobs (TypeScript : `npm ci`, build, typecheck, test, `npm audit
---audit-level=high` ; Rust : `cargo test`). Seuil audit justifié dans
-`docs/mission/mission-PALLAS-M06-journal.md`.
+`.github/workflows/ci.yml` : deux jobs reposés sur le **shell Nix du repo** (`shell.nix` épinglé —
+le même environnement que le dev, y compris bubblewrap) : TypeScript `npm ci`, build, typecheck,
+test, `npm audit --audit-level=high` ; Rust `cargo test` + `cargo audit` via Nix. Seuil audit
+justifié dans `docs/mission/mission-PALLAS-M06-journal.md`.
 
 ## Documentation
 

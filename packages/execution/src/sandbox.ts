@@ -153,9 +153,16 @@ function buildBwrapArgs(binary: string, args: string[], cwd: string | undefined)
 function locateBwrap(): string {
   const fromEnv = process.env.PALLAS_SANDBOX_BIN;
   if (fromEnv && existsSync(fromEnv)) return fromEnv;
-  // chemins courants
+  // chemins courants (dont le lien NixOS system-wide)
   for (const p of ['/run/current-system/sw/bin/bwrap', '/usr/bin/bwrap', '/usr/local/bin/bwrap']) {
     if (existsSync(p)) return p;
+  }
+  // bwrap fourni par un environnement (ex. shell Nix : /nix/store/...-bubblewrap-*/bin)
+  // n'est PAS dans les chemins fixes : chercher dans le PATH en dernier recours.
+  const pathDirs = (process.env.PATH ?? '').split(':').filter(Boolean);
+  for (const dir of pathDirs) {
+    const candidate = isAbsolute(dir) ? resolve(dir, 'bwrap') : 'bwrap';
+    if (isRegularExecutable(candidate)) return candidate;
   }
   throw new MissingBwrapError();
 }
