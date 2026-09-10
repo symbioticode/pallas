@@ -4,10 +4,16 @@
  * REJETE (ClobValidationError) — jamais substitué silencieusement par un NaN
  * ou une valeur par defaut.
  *
- * Formes de reference (docs.polymarket.com) :
- * - `/markets` : `{ data: [{ id, question, active, closed, end_date_iso,
- *   clob_token_ids: string[], best_bid?, best_ask? }], ... }`
- * - `/book`    : `{ asset_id, bids: [[price, size], ...], asks: [...] }`
+ * Formes de reference — VERIFIEES SUR L'API LIVE le 2026-09-09 (le format
+ * documente precedemment a change cote serveur) :
+ * - `/markets` : `{ data: [{ condition_id, question, fpmm, neg_risk, active,
+ *   closed, accepting_orders, end_date_iso, tokens: [{ token_id, outcome,
+ *   price?, winner? }] }], next_cursor? }` — PLUS de `id`/`clob_token_ids`/
+ *   `best_bid`/`best_ask` au niveau marche.
+ * - `/book`    : `{ market, asset_id, timestamp, hash,
+ *   bids: [{ price, size }], asks: [{ price, size }], min_order_size?, ... }`
+ *   — buckets en OBJETS `{price, size}` (les paires `[price, size]` sont
+ *   rejetees).
  * - POST /order : `{ success?, errorMsg?, orderID?, status?, ... }`
  */
 
@@ -30,21 +36,36 @@ const DecimalSchema = z.union([
     .regex(/^[+-]?(\d+\.?\d*|\.\d+)$/, 'attendu: nombre decimal'),
 ]);
 
-/** Reponse de la boucle d'ordres : buckets de paires [price, size]. */
-const BookLevelSchema = z.tuple([DecimalSchema, DecimalSchema]);
+/** Token d'outcome d'un marche `GET /markets` (shape live 2026-09-09).
+ * `outcome` n'est PAS bride a 'Yes'/'No' : l'API live porte des libelles libres
+ * (ex. 'Democratic'/'Republican', parfois '' sur des marches pas encore nes).
+ * Un `token_id` vide reste possible : a la lecture il devient `null` (aucune
+ * valeur inventee), jamais un identifiant exploitable. */
+const MarketTokenSchema = z
+  .object({
+    token_id: z.string().optional(),
+    outcome: z.string().optional(),
+    price: DecimalSchema.nullable().optional(),
+    winner: z.boolean().nullable().optional(),
+  })
+  .passthrough();
 
-/** Un marche /markets tel que renvoye par `data[]`. */
+/** Un marche /markets tel que renvoye par `data[]`.
+ * `condition_id`/`question` peuvent etre '' sur des marches pas encore nes :
+ * acceptes, jamais remplaces — l'identite vide reste honnete (aucune valeur inventee). */
 export const MarketSchema = z
   .object({
-    id: z.string().min(1),
-    question: z.string().min(1),
+    condition_id: z.string(),
+    question: z.string(),
     end_date_iso: z.string().nullable().optional(),
-    // Identifiants de tokens REQUIS : sans eux, impossible de trader ce marche.
-    clob_token_ids: z.array(z.string()),
-    best_bid: DecimalSchema.nullable().optional(),
-    best_ask: DecimalSchema.nullable().optional(),
+    fpmm: z.string().optional(),
+    neg_risk: z.boolean().nullable().optional(),
     active: z.union([z.boolean(), z.string()]).nullable().optional(),
     closed: z.union([z.boolean(), z.string()]).nullable().optional(),
+    accepting_orders: z.union([z.boolean(), z.string()]).nullable().optional(),
+    // Les tokens Yes/No SONT les identifiants d'actifs : sans eux impossible de
+    // trader ce marche. `tokens` est requis et doit compter >= 2 entites.
+    tokens: z.array(MarketTokenSchema).min(2),
   })
   .passthrough();
 
@@ -55,12 +76,21 @@ export const MarketsResponseSchema = z
   })
   .passthrough();
 
+/** Niveau de boucle d'ordres : objet `{ price, size }` (plus de paire `[price, size]`). */
+export const OrderbookLevelSchema = z.object({
+  price: DecimalSchema,
+  size: DecimalSchema,
+});
+
 /** Reponse de `GET /book?token_id=...`. */
 export const OrderbookSchema = z
   .object({
+    market: z.string().optional(),
     asset_id: z.string().optional(),
-    bids: z.array(BookLevelSchema),
-    asks: z.array(BookLevelSchema),
+    timestamp: z.union([z.string(), z.number()]).optional(),
+    hash: z.string().optional(),
+    bids: z.array(OrderbookLevelSchema),
+    asks: z.array(OrderbookLevelSchema),
   })
   .passthrough();
 

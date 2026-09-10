@@ -13,7 +13,8 @@
     "typecheck": "tsc --build --dry packages/core packages/risk packages/execution",
     "pretest": "tsc --build packages/core packages/risk packages/execution",
     "test": "vitest run --reporter=verbose",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dry-run": "node scripts/dry-run.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

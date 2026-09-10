@@ -44,19 +44,22 @@ function jsonResponse(payload: unknown): globalThis.Response {
 }
 
 describe('PolymarketClient reads (dry-run safe)', () => {
-  it('listMarkets mappe les marches CLOB', async () => {
+  it('listMarkets mappe les marches CLOB (shape live tokens[])', async () => {
     const fetcher = vi.fn(async () =>
       jsonResponse({
         data: [
           {
-            id: 'mkt-1',
+            condition_id: '0xcond-1',
             question: 'Le BTC depassera 120k fin 2026 ?',
             active: 'true',
             closed: 'false',
+            fpmm: '0xfpmm',
+            neg_risk: false,
             end_date_iso: '2026-12-31T23:59:00Z',
-            clob_token_ids: ['tok-yes', 'tok-no'],
-            best_bid: '0.53',
-            best_ask: '0.55',
+            tokens: [
+              { token_id: 'tok-yes', outcome: 'Yes', price: '0.53', winner: null },
+              { token_id: 'tok-no', outcome: 'No', price: '0.47', winner: null },
+            ],
           },
         ],
       })
@@ -69,19 +72,57 @@ describe('PolymarketClient reads (dry-run safe)', () => {
     );
     expect(markets).toHaveLength(1);
     expect(markets[0]).toMatchObject({
-      id: 'mkt-1',
+      id: '0xcond-1',
       question: 'Le BTC depassera 120k fin 2026 ?',
       yesTokenId: 'tok-yes',
       noTokenId: 'tok-no',
-      bestBid: 0.53,
-      bestAsk: 0.55,
+      // best_bid/best_ask supprimes de /markets par l'API ; prix a lire via /book.
+      bestBid: null,
+      bestAsk: null,
       active: true,
     });
   });
 
-  it('getOrderbook parses prix/sizes depuis les buckets CLOB', async () => {
+  it('drift API 2026-09-09: outcome libre (Democratic/Republican, token vide) => tokens nuls, pas de fabri cation', async () => {
     const fetcher = vi.fn(async () =>
-      jsonResponse({ bids: [['0.51', '100'], ['0.50', '250']], asks: [['0.52', '80']] })
+      jsonResponse({
+        data: [
+          {
+            condition_id: '0xcond-multi',
+            question: 'Quel parti gagnera ?',
+            tokens: [
+              { token_id: 'tok-dem', outcome: 'Democratic', price: '0.40', winner: null },
+              { token_id: 'tok-rep', outcome: 'Republican', price: '0.60', winner: null },
+            ],
+          },
+          {
+            condition_id: '0xcond-vide',
+            question: 'Marche pas encore ne ?',
+            tokens: [
+              { token_id: '', outcome: '', price: null, winner: null },
+              { token_id: '', outcome: '', price: null, winner: null },
+            ],
+          },
+        ],
+      })
+    );
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher });
+    const markets = await c.listMarkets(5);
+    expect(markets).toHaveLength(2);
+    expect(markets[0]).toMatchObject({ id: '0xcond-multi', yesTokenId: null, noTokenId: null });
+    expect(markets[1]).toMatchObject({ id: '0xcond-vide', yesTokenId: null, noTokenId: null });
+  });
+
+  it('getOrderbook parses les buckets objets {price, size}', async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        market: '0xcond-1',
+        asset_id: 'tok-yes',
+        timestamp: '1789008100148',
+        hash: 'abc123',
+        bids: [{ price: '0.51', size: '100' }, { price: '0.50', size: '250' }],
+        asks: [{ price: '0.52', size: '80' }],
+      })
     );
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher });
     const book = await c.getOrderbook('tok-yes');
@@ -98,18 +139,17 @@ describe('PolymarketClient reads (dry-run safe)', () => {
     await expect(c.listMarkets(1)).rejects.toThrow(/429/);
   });
 
-  it('M04: best_bid non numerique => ClobValidationError (plus jamais NaN silencieux)', async () => {
+  it('drift API 2026-09-09: ancienne forme (id + clob_token_ids + best_bid) => ClobValidationError', async () => {
     const fetcher = vi.fn(async () =>
       jsonResponse({
         data: [
           {
             id: 'mkt-x',
-            question: 'Marché cassé ?',
+            question: 'Ancien format doc, retiré de l API live ?',
             active: 'true',
             closed: 'false',
-            end_date_iso: '2026-12-31T23:59:00Z',
             clob_token_ids: ['tok-yes', 'tok-no'],
-            best_bid: 'not-a-number',
+            best_bid: '0.53',
             best_ask: '0.55',
           },
         ],
@@ -119,13 +159,13 @@ describe('PolymarketClient reads (dry-run safe)', () => {
     await expect(c.listMarkets(1)).rejects.toBeInstanceOf(ClobValidationError);
   });
 
-  it('M04: clob_token_ids absent => ClobValidationError (identifiants obligatoires)', async () => {
+  it('M04: tokens absent => ClobValidationError (identifiants obligatoires)', async () => {
     const fetcher = vi.fn(async () =>
       jsonResponse({
         data: [
           {
-            id: 'mkt-x',
-            question: 'Marché sans token ids ?',
+            condition_id: '0xcond-x',
+            question: 'Marché sans tokens ?',
             active: 'true',
             closed: 'false',
           },
@@ -136,9 +176,12 @@ describe('PolymarketClient reads (dry-run safe)', () => {
     await expect(c.listMarkets(1)).rejects.toBeInstanceOf(ClobValidationError);
   });
 
-  it('M04: bucket d.orderbook malforme (3 elements) => ClobValidationError', async () => {
+  it('drift API 2026-09-09: bucket paire [price, size] (ancien format) => ClobValidationError', async () => {
     const fetcher = vi.fn(async () =>
-      jsonResponse({ bids: [['0.51', '100']], asks: [['0.52', '80', 'extra']] })
+      jsonResponse({
+        bids: [{ price: '0.51', size: '100' }],
+        asks: [['0.52', '80', 'extra']],
+      })
     );
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher });
     await expect(c.getOrderbook('tok-yes')).rejects.toBeInstanceOf(ClobValidationError);

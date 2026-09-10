@@ -111,17 +111,23 @@ function boolOf(v: unknown, fallback = true): boolean {
 
 function mapMarket(raw: unknown): Market {
   const r = raw as Record<string, unknown>;
-  const bestBid = r['best_bid'] != null ? Number(r['best_bid']) : null;
-  const bestAsk = r['best_ask'] != null ? Number(r['best_ask']) : null;
-  const ids = Array.isArray(r['clob_token_ids']) ? (r['clob_token_ids'] as Array<string>) : [];
+  const tokens = Array.isArray(r['tokens']) ? (r['tokens'] as Array<Record<string, unknown>>) : [];
+  const pick = (outcome: 'Yes' | 'No'): string | null => {
+    const found = tokens.find((t) => t['outcome'] === outcome);
+    const id = found?.['token_id'];
+    // token_id vide (marches pas encore nes) => null, jamais '' exploitable.
+    return typeof id === 'string' && id.length > 0 ? id : null;
+  };
   return {
-    id: String(r['id'] ?? ''),
+    id: String(r['condition_id'] ?? ''),
     question: String(r['question'] ?? ''),
     endDate: typeof r['end_date_iso'] === 'string' ? r['end_date_iso'] : null,
-    yesTokenId: ids[0] ?? null,
-    noTokenId: ids[1] ?? null,
-    bestBid,
-    bestAsk,
+    yesTokenId: pick('Yes'),
+    noTokenId: pick('No'),
+    // La refonte API (verifiee 2026-09-09) a retire best_bid/best_ask de la
+    // liste des marches : le prix d'une option se lit via /book?token_id=...
+    bestBid: null,
+    bestAsk: null,
     active: boolOf(r['active'], true) && !boolOf(r['closed'], false),
   };
 }
@@ -193,8 +199,8 @@ export class PolymarketClient {
   async getOrderbook(marketId: string): Promise<Orderbook> {
     const data = await this.get(`/book?token_id=${marketId}`);
     const parsed = parseClob(OrderbookSchema, 'getOrderbook', data);
-    const parse = (levels: [string | number, string | number][]): OrderbookLevel[] =>
-      levels.map((l) => ({ price: Number(l[0]), size: Number(l[1]) }));
+    const parse = (levels: { price: string | number; size: string | number }[]): OrderbookLevel[] =>
+      levels.map((l) => ({ price: Number(l.price), size: Number(l.size) }));
     return {
       marketId,
       bids: parse(parsed.bids),

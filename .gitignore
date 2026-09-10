@@ -4,3 +4,6 @@ dist/
 target/
 .env
 .coverage/
+
+# Audit ponctuel du depot (non suivi, reference le HEAD de son epoque)
+docs/AUDIT-PALLAS*.md
