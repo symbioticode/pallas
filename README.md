@@ -36,6 +36,19 @@ cargo test        # crates/risk-engine
 
 `npm run typecheck` = `tsc --build --dry`.
 
+## Interface CLI (dry-run)
+
+Interface de lecture Polymarket, aucune clé requise, aucune écriture (`placeOrder`/`cancelOrder`
+jamais exposés). Exécutable directement ou via npm :
+
+```bash
+./scripts/dry-run.mjs list-markets 5        # table de marchés CLOB (L'API en renvoie ~1000, affichage borné)
+./scripts/dry-run.mjs book <tokenId>        # best bid/ask, mid, spread d'un token
+./scripts/dry-run.mjs interactive           # menu : liste numérotée -> choix -> book Yes/No
+./scripts/dry-run.mjs --help                # toutes les commandes + options (--json pour JSON brut)
+npm run dry-run -- list-markets 5           # variante npm (le `--` sépare les args du script)
+```
+
 ## CI
 
 `.github/workflows/ci.yml` : deux jobs (TypeScript : `npm ci`, build, typecheck, test, `npm audit
