@@ -4,8 +4,16 @@ import { buildL1Headers, buildL2Headers, type ClobApiCredentials } from './clobA
 import { privateKeyToAddress, signClobAuth } from './polymarketSigner.js';
 import type { SignedOrderPayload } from './polymarketSigner.js';
 import type { OrderParams, OrderStatus, Market } from './types.js';
+import {
+  ClobValidationError,
+  parseClob,
+  DeriveApiKeyResponseSchema,
+  MarketsResponseSchema,
+  OrderbookSchema,
+  PlaceOrderResponseSchema,
+} from './clobSchema.js';
 
-export { SignatureSchemaNotValidatedError };
+export { SignatureSchemaNotValidatedError, ClobValidationError };
 
 export interface PolymarketClientConfig {
   /** URL de base de l'API CLOB. Par defaut la prod publique. */
@@ -63,6 +71,38 @@ export interface ApiCreds {
   passphrase: string;
 }
 
+/**
+ * PALLAS-M04 — l'API CLOB n'a AUCUNE cle d'idempotence (docs place-orders : le
+ * corps POST n'a que deferExec/order/orderType/owner/postOnly). Un timeout ou
+ * un 5xx sur placeOrder laisse donc le resultat INDETERMINE : re-emettre
+ * automatiquement peut placer DEUX ordres. On ne reessaye jamais un POST ; on
+ * leve une erreur "ambiguë" que l'appelant DOIT reconcilier (verifier ordres
+ * ouverts / balances) avant toute nouvelle emission.
+ */
+export class AmbiguousOrderError extends Error {
+  constructor(cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(
+      `placeOrder: reponse indeterminee (requete envoyee, resultat inconnu) — l'ordre PEUT avoir ete place; ` +
+        `ne pas re-emettre sans reconciliation. detail: ${detail}`,
+    );
+    this.name = 'AmbiguousOrderError';
+  }
+}
+
+/** Erreur HTTP 5xx : reponse de "failover" reçue, retrable sans danger. */
+class RetryableHttpError extends Error {}
+
+function isTransientNetworkError(err: unknown): boolean {
+  if (err instanceof TypeError) return true;
+  const name = (err as Error | undefined)?.name;
+  return name === 'TimeoutError' || name === 'AbortError';
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 function boolOf(v: unknown, fallback = true): boolean {
   if (v === undefined || v === null) return fallback;
   if (typeof v === 'boolean') return v;
@@ -86,14 +126,6 @@ function mapMarket(raw: unknown): Market {
   };
 }
 
-async function handleResponse(res: globalThis.Response): Promise<unknown> {
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Polymarket HTTP ${res.status}: ${body.slice(0, 200)}`);
-  }
-  return res.json();
-}
-
 /** Construit un client Polymarket. Toute ecriture est dry-run par defaut. */
 export class PolymarketClient {
   private readonly baseUrl: string;
@@ -110,7 +142,7 @@ export class PolymarketClient {
     this.maxRetries = 2;
   }
 
-  private async get<T>(path: string): Promise<T> {
+  private async get(path: string): Promise<unknown> {
     let lastErr: unknown;
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
       try {
@@ -119,13 +151,19 @@ export class PolymarketClient {
           headers: { accept: 'application/json' },
           signal: AbortSignal.timeout(10_000),
         });
-        return (await handleResponse(res)) as T;
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          const http = new Error(`Polymarket HTTP ${res.status}: ${body.slice(0, 200)}`);
+          if (res.status >= 500) throw new RetryableHttpError(http.message);
+          throw http;
+        }
+        return await res.json();
       } catch (err) {
+        const transient = isTransientNetworkError(err) || err instanceof RetryableHttpError;
+        if (!transient) throw err;
         lastErr = err;
-        // retry sur erreurs transitoires seulement
-        if (!(err instanceof TypeError)) throw err;
         if (attempt < this.maxRetries) {
-          await new Promise((r) => setTimeout(r, 200 * 2 ** attempt));
+          await sleep(200 * 2 ** attempt);
         }
       }
     }
@@ -146,25 +184,21 @@ export class PolymarketClient {
 
   /** Liste les marches. Lecture : autorisee en dry-run. */
   async listMarkets(limit = 10): Promise<MarketSummary[]> {
-    const data = await this.get<Record<string, unknown>>(`/markets?limit=${limit}&active=true&closed=false`);
-    const arr = Array.isArray(data['data']) ? (data['data'] as unknown[]) : [];
-    return arr.map((m) => this.toMarketSummary(m));
+    const data = await this.get(`/markets?limit=${limit}&active=true&closed=false`);
+    const parsed = parseClob(MarketsResponseSchema, 'listMarkets', data);
+    return parsed.data.map((m) => this.toMarketSummary(m));
   }
 
   /** Orderbook d'un marche. Lecture : autorisee en dry-run. */
   async getOrderbook(marketId: string): Promise<Orderbook> {
-    const data = await this.get<Record<string, unknown>>(`/book?token_id=${marketId}`);
-    const bids = Array.isArray(data['bids']) ? (data['bids'] as unknown[]) : [];
-    const asks = Array.isArray(data['asks']) ? (data['asks'] as unknown[]) : [];
-    const parse = (levels: unknown[]): OrderbookLevel[] =>
-      levels.map((l) => {
-        const row = l as [string, string];
-        return { price: Number(row[0]), size: Number(row[1]) };
-      });
+    const data = await this.get(`/book?token_id=${marketId}`);
+    const parsed = parseClob(OrderbookSchema, 'getOrderbook', data);
+    const parse = (levels: [string | number, string | number][]): OrderbookLevel[] =>
+      levels.map((l) => ({ price: Number(l[0]), size: Number(l[1]) }));
     return {
       marketId,
-      bids: parse(bids),
-      asks: parse(asks),
+      bids: parse(parsed.bids),
+      asks: parse(parsed.asks),
       fetchedAt: new Date().toISOString(),
     };
   }
@@ -194,19 +228,40 @@ export class PolymarketClient {
       ...(opts.postOnly ? { postOnly: true } : {}),
     });
     const headers = await buildL2Headers(creds, 'POST', '/order', body);
-    const res = await this.fetcher(`${this.baseUrl}/order`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...headers },
-      body,
-      signal: AbortSignal.timeout(10_000),
-    });
-    const data = (await handleResponse(res)) as Record<string, unknown>;
-    if (data['success'] === false) {
-      throw new Error(`Polymarket placeOrder refuse: ${String(data['errorMsg'] ?? 'unknown')}`);
+
+    let res: globalThis.Response;
+    try {
+      res = await this.fetcher(`${this.baseUrl}/order`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body,
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (err) {
+      // Timeout/reseau : resultat INDETERMINE — pas de retry (double-placement).
+      throw new AmbiguousOrderError(err);
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      if (res.status >= 500) {
+        // 5xx = reponse serveur "failover", mais l'ordre a pu etre accepte avant.
+        throw new AmbiguousOrderError(new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`));
+      }
+      throw new Error(`Polymarket HTTP ${res.status}: ${text.slice(0, 200)}`);
+    }
+
+    const data = parseClob(PlaceOrderResponseSchema, 'placeOrder', await res.json().catch(() => null));
+    if (data.success === false) {
+      throw new Error(`Polymarket placeOrder refuse: ${String(data.errorMsg ?? 'unknown')}`);
+    }
+    const orderId = data.orderID ?? '';
+    if (!orderId) {
+      throw new ClobValidationError('placeOrder: orderID absent de la reponse acceptee');
     }
     return {
-      orderId: String(data['orderID'] ?? data['id'] ?? ''),
-      status: (data['status'] as OrderStatus) ?? 'open',
+      orderId,
+      status: (data.status as OrderStatus) ?? 'open',
       dryRun: false,
     };
   }
@@ -218,17 +273,36 @@ export class PolymarketClient {
     }
     const creds = this.requireAuth('cancelOrder');
     const path = `/order/${orderId}`;
-    const headers = await buildL2Headers(creds, 'DELETE', path);
-    const res = await this.fetcher(`${this.baseUrl}${path}`, {
-      method: 'DELETE',
-      headers: { accept: 'application/json', ...headers },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`Polymarket cancel HTTP ${res.status}: ${body.slice(0, 200)}`);
+
+    // DELETE est IDEMPOTENT par orderId : cancel d'un ordre deja annule/inconnu
+    // est un no-op cote CLOB. On peut donc retenter les erreurs transitoires
+    // (reseau, timeout, 5xx) — pas les 4xx qui sont definitives.
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+      try {
+        const headers = await buildL2Headers(creds, 'DELETE', path);
+        const res = await this.fetcher(`${this.baseUrl}${path}`, {
+          method: 'DELETE',
+          headers: { accept: 'application/json', ...headers },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (res.ok) {
+          return { orderId, cancelled: true, dryRun: false };
+        }
+        const body = await res.text().catch(() => '');
+        const http = new Error(`Polymarket cancel HTTP ${res.status}: ${body.slice(0, 200)}`);
+        if (res.status >= 500) throw new RetryableHttpError(http.message);
+        throw http;
+      } catch (err) {
+        const transient = isTransientNetworkError(err) || err instanceof RetryableHttpError;
+        if (!transient) throw err;
+        lastErr = err;
+        if (attempt < this.maxRetries) {
+          await sleep(200 * 2 ** attempt);
+        }
+      }
     }
-    return { orderId, cancelled: true, dryRun: false };
+    throw lastErr;
   }
 
   /**
@@ -248,11 +322,11 @@ export class PolymarketClient {
       headers: { accept: 'application/json', ...headers },
       signal: AbortSignal.timeout(10_000),
     });
-    const data = (await handleResponse(res)) as Record<string, unknown>;
+    const data = parseClob(DeriveApiKeyResponseSchema, 'deriveApiKey', await res.json().catch(() => null));
     return {
-      apiKey: String(data['apiKey'] ?? ''),
-      secret: String(data['secret'] ?? ''),
-      passphrase: String(data['passphrase'] ?? ''),
+      apiKey: data.apiKey,
+      secret: data.secret,
+      passphrase: data.passphrase,
     };
   }
 

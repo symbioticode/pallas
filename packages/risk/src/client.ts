@@ -14,7 +14,6 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import type {
-  ErrorResponse,
   RecordResponse,
   StateInput,
   StateOutput,
@@ -24,6 +23,14 @@ import type {
   ValidateResponse,
   VarResponse,
 } from './types.js';
+import {
+  ErrorResponseSchema,
+  RecordResponseSchema,
+  ValidateResponseSchema,
+  VarResponseSchema,
+} from './types.js';
+
+import type { ZodType } from 'zod';
 
 /** Erreur de contrat du risk engine : binaire manquante ou reponse invalide. */
 export class RiskEngineError extends Error {
@@ -72,24 +79,34 @@ function locateBinary(): string {
   throw new MissingBinaryError(first);
 }
 
-async function invoke<T>(input: unknown): Promise<T> {
+async function invoke(input: unknown, schema: ZodType<unknown>): Promise<unknown> {
   const bin = locateBinary();
 
   const stdout = await runBinary(bin, JSON.stringify(input));
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(stdout) as T;
+    parsed = JSON.parse(stdout);
   } catch {
     throw new RiskEngineError(`risk-engine returned invalid JSON: ${stdout.slice(0, 200)}`);
   }
 
-  const err = (parsed as ErrorResponse).error;
-  if (err) {
-    throw new RiskEngineError(`risk-engine: ${err}`);
+  // Reponse d'erreur explicite de la CLI : `{ "error": "..." }`.
+  const errResp = ErrorResponseSchema.safeParse(parsed);
+  if (errResp.success) {
+    throw new RiskEngineError(`risk-engine: ${errResp.data.error}`);
   }
 
-  return parsed as T;
+  // PALLAS-M04 : plus aucun cast aveugle — le contrat est valide a l'execution.
+  const ok = schema.safeParse(parsed);
+  if (!ok.success) {
+    const issues = ok.error.issues
+      .map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`)
+      .slice(0, 5)
+      .join('; ');
+    throw new RiskEngineError(`risk-engine returned a response that violates the CLI contract: ${issues}`);
+  }
+  return ok.data;
 }
 
 /** Lance la binaire avec `input` sur stdin, collecte stdout. Array args, jamais shell. */
@@ -142,7 +159,7 @@ function runBinary(bin: string, input: string, timeoutMs = 10_000): Promise<stri
 
 /** Valide un trade contre le pipeline de risque complet (fail-closed). */
 export async function validateTrade(trade: TradeRequest, state: StateInput = { hist_pnls: [] }): Promise<TradeDecision> {
-  const res = await invoke<ValidateResponse>({ command: 'validate', trade, state });
+  const res = (await invoke({ command: 'validate', trade, state }, ValidateResponseSchema)) as ValidateResponse;
   return res.decision;
 }
 
@@ -151,7 +168,7 @@ export async function validateTradeWithState(
   trade: TradeRequest,
   state: StateInput = { hist_pnls: [] },
 ): Promise<ValidateResponse> {
-  return await invoke<ValidateResponse>({ command: 'validate', trade, state });
+  return (await invoke({ command: 'validate', trade, state }, ValidateResponseSchema)) as ValidateResponse;
 }
 
 /**
@@ -159,13 +176,13 @@ export async function validateTradeWithState(
  * et retourne l'etat mis a jour a persister par l'appelant pour le prochain appel.
  */
 export async function recordPnl(state: StateInput, pnl: number): Promise<StateOutput> {
-  const res = await invoke<RecordResponse>({ command: 'record', state, pnl });
+  const res = (await invoke({ command: 'record', state, pnl }, RecordResponseSchema)) as RecordResponse;
   return res.state;
 }
 
 /** Calcule VaR/CVaR sur une serie de P&L historique. */
 export async function calculateVaR(pnls: number[], confidence = 0.95): Promise<VaRResult> {
-  const res = await invoke<VarResponse>({ command: 'var', pnls, confidence });
+  const res = (await invoke({ command: 'var', pnls, confidence }, VarResponseSchema)) as VarResponse;
   return res.var;
 }
 

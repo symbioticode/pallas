@@ -5,7 +5,7 @@ Mission ID : PALLAS-M04
 Date de création : 2026-09-09
 Auteur / Agent : Claude (planification) — exécution par agent de code au choix
 Projet : Pallas
-Statut : ACTIF
+Statut : **CLÔTURÉE le 2026-09-09** (exécution : opencode/big-pickle — journal : `mission-PALLAS-M04-journal.md`)
 Source de vérité : `AUDIT-PALLAS-v0.1.md` (sections "Écart PLAN/réalité" et "Qualité du code —
 TypeScript") + `packages/risk/src/client.ts` + `packages/execution/src/polymarketClient.ts`
 
@@ -91,14 +91,14 @@ d'idempotence explicite.
    Polymarket) plutôt que de la contourner silencieusement.
 
 ## 7. Critères de succès
-- [ ] `packages/risk/src/client.ts::invoke` rejette explicitement (avec `RiskEngineError`) toute
+- [x] `packages/risk/src/client.ts::invoke` rejette explicitement (avec `RiskEngineError`) toute
       réponse JSON qui ne correspond pas au schéma attendu — testé avec au moins 2 cas de
       malformation différents.
-- [ ] `polymarketClient.ts` rejette explicitement toute réponse CLOB malformée avant mapping —
+- [x] `polymarketClient.ts` rejette explicitement toute réponse CLOB malformée avant mapping —
       testé avec au moins 2 cas de malformation différents (nombre invalide, champ manquant).
-- [ ] `placeOrder`/`cancelOrder` ont une stratégie de retry/idempotence documentée et testée, ou une
+- [x] `placeOrder`/`cancelOrder` ont une stratégie de retry/idempotence documentée et testée, ou une
       limite documentée explicitement si l'API ne le permet pas.
-- [ ] Aucune régression sur les tests existants (`npm test` toujours vert).
+- [x] Aucune régression sur les tests existants (`npm test` toujours vert).
 
 ## 8. Interdictions
 - Ne pas introduire de dépendance de validation autre que `zod` sans justification (déjà présente

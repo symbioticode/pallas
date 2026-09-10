@@ -1,4 +1,7 @@
 import { test, expect, afterEach, vi } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { binaryPath, calculateVaR, MissingBinaryError, recordPnl, RiskEngineError, validateTrade, validateTradeWithState } from './index.js';
 import type { StateInput, TradeRequest } from './index.js';
@@ -107,4 +110,55 @@ test('validateTrade returns the persistent state to store back', async () => {
   expect(state.kill_switch_engaged).toBe(false);
   expect(state.circuit_breaker).toBeDefined();
   expect(state.volatility.window).toBeInstanceOf(Array);
+});
+
+// --- PALLAS-M04 : frontiere risk engine — validation runtime stricte ---
+
+/** Installe une fausse binaire Rust dont stdout/exit sont controles. */
+function fakeRiskBinary(stdout: string, code = 0): string {
+  const dir = mkdtempSync(join(tmpdir(), 'pallas-risk-fake-'));
+  const bin = join(dir, 'risk-engine');
+  const quoted = stdout.replace(/'/g, "'\\''");
+  writeFileSync(bin, `#!/bin/sh\ncat > /dev/null\nprintf '%s' '${quoted}'\nexit ${code}\n`, { mode: 0o755 });
+  return bin;
+}
+
+const VALID_STATE_JSON =
+  '{"hist_pnls":[1,-1],"kill_switch_engaged":false,' +
+  '"circuit_breaker":{"state":"Closed","consecutive_losses":0,"cumulative_pnl":0,"peak_pnl":0,"since_trip":0},' +
+  '"volatility":{"window":[],"baseline":null}}';
+
+test('M04: invoke rejette une reponse validate dont le type d.un champ est faux', async () => {
+  // suggested_size_usd est une string au lieu d'un nombre : cast aveugle aurait laissé passer.
+  vi.stubEnv(
+    'PALLAS_RISK_BIN',
+    fakeRiskBinary(
+      `{"decision":{"allowed":true,"gates":[],"rejected_by":[],"suggested_size_usd":"big"},"state":${VALID_STATE_JSON}}`,
+    ),
+  );
+  await expect(() => validateTrade(validTrade, { hist_pnls: [] })).rejects.toThrow(RiskEngineError);
+});
+
+test('M04: invoke rejette une reponse validate dont un champ est manquant', async () => {
+  // volatility absent de state : strict => contract violation, jamais objet partiel.
+  const stateWithoutVolatility =
+    '{"hist_pnls":[],"kill_switch_engaged":false,' +
+    '"circuit_breaker":{"state":"Open","consecutive_losses":3,"cumulative_pnl":-40,"peak_pnl":0,"since_trip":1}}';
+  vi.stubEnv(
+    'PALLAS_RISK_BIN',
+    fakeRiskBinary(`{"decision":${'{"allowed":false,"gates":[],"rejected_by":["X"],"suggested_size_usd":0}'},"state":${stateWithoutVolatility}}`),
+  );
+  await expect(() => validateTrade(validTrade, { hist_pnls: [] })).rejects.toThrow(/contract/);
+});
+
+test('M04: la reponse d.erreur CSSL reste detectee (error string)', async () => {
+  vi.stubEnv('PALLAS_RISK_BIN', fakeRiskBinary('{"error":"garbage side value"}'));
+  await expect(() => validateTrade(validTrade, { hist_pnls: [] })).rejects.toThrow(/garbage side value/);
+});
+
+test('M04: calculateVaR rejette un champ manquant (sample_size absent)', async () => {
+  const varWithoutSample =
+    '{"historical_var":1,"parametric_var":2,"cvar":3,"confidence_level":0.95,"mean_pnl":0,"std_dev":1}';
+  vi.stubEnv('PALLAS_RISK_BIN', fakeRiskBinary(`{"var":${varWithoutSample}}`));
+  await expect(() => calculateVaR([-1, -2], 0.95)).rejects.toThrow(RiskEngineError);
 });

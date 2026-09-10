@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { PolymarketClient, SignatureSchemaNotValidatedError } from './polymarketClient.js';
+import { PolymarketClient, AmbiguousOrderError, ClobValidationError, SignatureSchemaNotValidatedError } from './polymarketClient.js';
 import {
   __setSignatureSchemaValidatedForTests as setSchemaValidated,
 } from './schemaGate.js';
@@ -96,6 +96,52 @@ describe('PolymarketClient reads (dry-run safe)', () => {
     const fetcher = vi.fn(async () => new Response('rate limit', { status: 429 }));
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher });
     await expect(c.listMarkets(1)).rejects.toThrow(/429/);
+  });
+
+  it('M04: best_bid non numerique => ClobValidationError (plus jamais NaN silencieux)', async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        data: [
+          {
+            id: 'mkt-x',
+            question: 'Marché cassé ?',
+            active: 'true',
+            closed: 'false',
+            end_date_iso: '2026-12-31T23:59:00Z',
+            clob_token_ids: ['tok-yes', 'tok-no'],
+            best_bid: 'not-a-number',
+            best_ask: '0.55',
+          },
+        ],
+      })
+    );
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher });
+    await expect(c.listMarkets(1)).rejects.toBeInstanceOf(ClobValidationError);
+  });
+
+  it('M04: clob_token_ids absent => ClobValidationError (identifiants obligatoires)', async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        data: [
+          {
+            id: 'mkt-x',
+            question: 'Marché sans token ids ?',
+            active: 'true',
+            closed: 'false',
+          },
+        ],
+      })
+    );
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher });
+    await expect(c.listMarkets(1)).rejects.toBeInstanceOf(ClobValidationError);
+  });
+
+  it('M04: bucket d.orderbook malforme (3 elements) => ClobValidationError', async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({ bids: [['0.51', '100']], asks: [['0.52', '80', 'extra']] })
+    );
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher });
+    await expect(c.getOrderbook('tok-yes')).rejects.toBeInstanceOf(ClobValidationError);
   });
 });
 
@@ -234,5 +280,49 @@ describe('PolymarketClient writes — live valide', () => {
     expect(signer.toLowerCase()).toBe(ADDR.toLowerCase());
 
     expect(creds).toEqual({ apiKey: 'ak', secret: 'sc', passphrase: 'pp' });
+  });
+
+  it('M04: timeout sur placeOrder => AmbiguousOrderError et AUCUN retry auto (double-placement)', async () => {
+    // L'API CLOB n'a PAS de cle d'idempotence (docs place-orders) : retenter un POST
+    // apres timeout pourrait placer DEUX ordres. On ne reessaye donc jamais : on leve
+    // une erreur "reponse inconnue" explicite que l'appelant doit reconcilier.
+    const fetcher = vi.fn(
+      async () =>
+        new Promise<never>((_resolve, reject) => {
+          const e = new Error('The operation was aborted');
+          e.name = 'TimeoutError';
+          reject(e);
+        })
+    );
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy(3n)))
+      .rejects.toBeInstanceOf(AmbiguousOrderError);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('M04: 5xx sur placeOrder => AmbiguousOrderError, pas de retry (reponse serveur inconnue)', async () => {
+    const fetcher = vi.fn(async () => new Response('gateway timeout', { status: 502 }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy(4n)))
+      .rejects.toBeInstanceOf(AmbiguousOrderError);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('M04: cancelOrder retente les erreurs reseau transitoires (DELETE idempotent par orderId)', async () => {
+    const fetcher = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('aborted'), { name: 'TimeoutError' }))
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    const res = await c.cancelOrder('order-42');
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(res).toEqual({ orderId: 'order-42', cancelled: true, dryRun: false });
+  });
+
+  it('M04: cancelOrder ne retente PAS un 404 (definitif)', async () => {
+    const fetcher = vi.fn(async () => new Response('not found', { status: 404 }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    await expect(c.cancelOrder('order-42')).rejects.toThrow(/404/);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

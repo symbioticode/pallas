@@ -16,7 +16,7 @@
 > | `PALLAS-M01` | Risk engine — validation stricte + état réel transmis | 🔴 Critique → ✅ clôturée 2026-09-09 |
 > | `PALLAS-M02` | Signature Polymarket EIP-712 — correction et validation officielle | 🔴 Critique → ✅ clôturée 2026-09-09 |
 > | `PALLAS-M03` | Sandbox bwrap — fix opérationnel + suppression du faux positif réseau | 🟠 Haute → ✅ clôturée 2026-09-09 |
-> | `PALLAS-M04` | Frontières TS/HTTP — validation runtime stricte, retry, idempotence | 🟠 Haute |
+> | `PALLAS-M04` | Frontières TS/HTTP — validation runtime stricte, retry, idempotence | 🟠 Haute → ✅ clôturée 2026-09-09 |
 > | `PALLAS-M05` | Credentials & mémoire — honnêteté du zeroing, fermeture des fuites en clair | 🟡 Moyenne |
 > | `PALLAS-M06` | CI/CD + documentation sobre | 🟡 Moyenne |
 >
@@ -134,8 +134,10 @@ pallas/
       persistant (circuit breaker, volatilite) transporte entre appels, machine a etats
       Open→HalfOpen→Closed, NaN traite — 50 tests Rust verts, voir PALLAS-M01, cloturee le 2026-09-09.**
 - [x] Facade TS `@pallas/risk` qui appelle la CLI (contrat JSON stdin/stdout) — **fail-closed sur
-      process/exit non-zero confirme ; PAS de validation runtime du schema JSON retourne
-      (cast aveugle, `packages/risk/src/client.ts:73-90`) — voir PALLAS-M04.**
+      process/exit non-zero confirme ; depuis PALLAS-M04 (cloturee le 2026-09-09) la reponse JSON est
+      VALIDEE a l'execution contre des schemas Zod du contrat reel (types.rs — serde snake_case) :
+      tout ecart (champ manquant, type faux) leve `RiskEngineError` explicite, plus jamais de cast
+      aveugle `as T`.**
 - [ ] CI : npm + cargo, passe du premier coup — **`.github/workflows/` ne contient qu'un `.gitkeep`,
       aucune pipeline — voir PALLAS-M06.**
 
@@ -218,14 +220,19 @@ Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a tr
 
 ## Phase 2 — Execution Polymarket (S3-S5)
 
-### 2.1 Polymarket adapter (FAIT pour lecture/mocks, PARTIEL pour la robustesse reseau)
+### 2.1 Polymarket adapter (FAIT, robustesse reseau durcie — PALLAS-M04 cloturee le 2026-09-09)
 - [x] Client Polymarket CLOB (HTTP natif, aucun SDK) — `listMarkets`, `getOrderbook`, `placeOrder`, `cancelOrder`
 - [x] Reads autorises en dry-run ; writes bloques en dry-run (fail-closed)
-- [~] Retry/backoff exponentiel — **uniquement sur les GET et uniquement pour `TypeError`
-      (`polymarketClient.ts:108-128`). Aucun retry ni idempotence sur POST/DELETE — voir PALLAS-M04.**
-- [~] Mapping CLOB — **valide seulement contre des fixtures mockees ; aucune validation runtime des
-      nombres/tableaux/identifiants recus reellement de l'API — voir PALLAS-M04.**
-- [x] Tests : 6 verts (mocking API)
+- [x] Retry/backoff exponentiel — **GET (listMarkets/getOrderbook) : retry sur `TypeError`, timeout/abort
+      et 5xx. `cancelOrder` (DELETE, IDEMPOTENT par orderId) : retry sur les MÊMES erreurs transitoires.
+      `placeOrder` (POST) : AUCUN retry — l'API CLOB n'a PAS de cle d'idempotence (docs place-orders,
+      corps = deferExec/order/orderType/owner/postOnly) ; timeout ou 5xx ⇒ `AmbiguousOrderError`
+      "l'ordre PEUT avoir ete place, ne pas re-emettre sans reconciliation" (testee : fetcher appele
+      1 seule fois).**
+- [x] Mapping CLOB — **validation runtime stricte via schemas Zod (`clobSchema.ts`) : `best_bid`
+      non numerique, `clob_token_ids` absent, bucket d'orders malforme ⇒ `ClobValidationError`
+      explicite, plus JAMAIS de `Number(undefined)`→NaN silencieux.**
+- [x] Tests : 20 verts (`polymarketClient.test.ts`)
 
 ### 2.2 Credentials Polymarket
 - [x] Stockage chiffre via `polymarketSecrets` (AES-256-GCM, fail-closed) — 8 tests
