@@ -1,15 +1,24 @@
 import { test, expect } from 'vitest';
+import { keccak_256 } from '@noble/hashes/sha3';
 import {
+  ORDER_SIDE,
   POLYMARKET_DOMAIN,
+  POLYMARKET_NEG_RISK_DOMAIN,
   POLYMARKET_ORDER_TYPES,
-  domainSeparator,
-  orderTypeHash,
-  signOrder,
-  recoverSignerAddress,
-  privateKeyToAddress,
-  signEip191,
-  signApiCreds,
+  SIGNATURE_TYPE,
   buildSignedOrderPayload,
+  calculateOrderAmounts,
+  clobAuthDigest,
+  domainSeparator,
+  encodeOrderData,
+  orderDigest,
+  orderStructHash,
+  orderTypeHash,
+  privateKeyToAddress,
+  recoverSignerAddress,
+  randomSalt,
+  signClobAuth,
+  signOrder,
 } from './polymarketSigner.js';
 import type { OrderToSign } from './polymarketSigner.js';
 
@@ -17,111 +26,362 @@ import type { OrderToSign } from './polymarketSigner.js';
 const PK_ONE = '0000000000000000000000000000000000000000000000000000000000000001';
 const ADDR_PK_ONE = '0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf';
 
-const baseOrder: OrderToSign = {
-  salt: 1766847064778384329583297500742918515827483896875618958121606201292619776n,
-  maker: '0x322135Fc8e7e0a1EfE2476c9aa8D57657436F9cB',
-  signer: '0x322135Fc8e7e0a1EfE2476c9aa8D57657436F9cB',
-  taker: '0x0000000000000000000000000000000000000000',
-  tokenId: 71321045692408328360022118623747958115297759768786203608435393348337133299310n,
-  makerAmount: 100000000n,
-  takerAmount: 55000000n,
-  expiration: 1779243518n,
-  nonce: 0n,
-  feeRateBps: 0n,
-  signatureType: 1,
-};
+// Ordre V2 fixe. Digests de REFERENCE calcules avec viem 2.56.3
+// (impl. EIP-712 de reference, celle que recommande la doc Polymarket).
+// Sources : docs.polymarket.com/trading/place-orders (schema/domain) + viem.
+const FIXED_SALT = 424242424242424n;
+const MAKER = '0x322135fc8e7e0a1efe2476c9aa8d57657436f9cb';
+const TOKEN = 71321045692408328360022118623747958115297759768786203608435393348337133299310n;
+const T_MILLIS = 1786000000000n;
+const ZERO32 = '0x0000000000000000000000000000000000000000000000000000000000000000';
 
-test(`privateKeyToAddress derive l'adresse connue du priv key 1`, () => {
+// Vecteurs viem 2.56.3 (ref.mjs, PALLAS-M02-journal) :
+//   BUY  : maker=5200000 (USD), taker=10000000 (shares), side=0, sigType=0, exchange standard.
+//   SELL : maker=10000000 (shares), taker=5200000 (USD), side=1.
+const VEC_BUY_DIGEST = '0x580449bc7be42d060ccd1ea3996a49d6480ae9c11cbebfe91fccc637d3d729a8';
+const VEC_SELL_DIGEST = '0xb3180cc12d726560171c505346e7a35010ad539fe0e3c53702c4633f5b247754';
+const VEC_NEG_RISK_BUY_DIGEST = '0xc348b2fa561697f18099390ba981b33a9678e7dd261b58f00ee6c56b2c4e5697';
+// Vecteur EIP-712 officiel : exemple « Ether Mail » du standard.
+const VEC_EIP712_MAIL_DIGEST = '0xbe609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2';
+// Payload L1 ClobAuth (EIP-712) — viem : address=MAKER, timestamp="1786000000", nonce=0.
+const VEC_CLOB_AUTH_DIGEST = '0x1fceabcdf6fe641c6ebd0e703449ebfcf2d1f0478c929594e702cd970b87d049';
+
+function fixedOrder(overrides: Partial<OrderToSign> = {}): OrderToSign {
+  return {
+    salt: FIXED_SALT,
+    maker: MAKER,
+    signer: MAKER,
+    tokenId: TOKEN,
+    makerAmount: 5200000n,
+    takerAmount: 10000000n,
+    side: ORDER_SIDE.BUY,
+    signatureType: SIGNATURE_TYPE.EOA,
+    timestamp: T_MILLIS,
+    metadata: ZERO32,
+    builder: ZERO32,
+    ...overrides,
+  };
+}
+
+// ------------------ hasher EIP-712 de reference (independant, pour TEST) ------------------
+// Implementation autonome dans ce fichier de test, calquee sur le standard EIP-712
+// (encodage canonique + dependances de types + champs dynamiques), pour croiser
+// les digests produits par polymarketSigner.ts et valider les vecteurs viem.
+
+function refUtf8(s: string): Uint8Array {
+  return new TextEncoder().encode(s);
+}
+
+function refKeccak(...parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((n, p) => n + p.length, 0);
+  const buf = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) {
+    buf.set(p, off);
+    off += p.length;
+  }
+  return keccak_256(buf);
+}
+
+function refPad32(bits: Uint8Array, len: number): Uint8Array {
+  if (bits.length > len) throw new Error(`too long ${bits.length}/${len}`);
+  const out = new Uint8Array(32);
+  out.set(bits, 32 - bits.length);
+  return out;
+}
+
+function refWord(big: bigint): Uint8Array {
+  return refPad32(Buffer.from(big.toString(16).padStart(64, '0'), 'hex'), 32);
+}
+
+function refAddress(addr: string): Uint8Array {
+  return refPad32(Buffer.from(addr.replace(/^0x/i, ''), 'hex'), 20);
+}
+
+function refBytes32(hexVal: string): Uint8Array {
+  return Buffer.from(hexVal.replace(/^0x/i, ''), 'hex');
+}
+
+type RefField = { name: string; type: string };
+type RefTypes = Record<string, RefField[]>;
+
+function refEncodeType(primary: string, types: RefTypes): string {
+  const deps: string[] = [];
+  const visit = (t: string): void => {
+    for (const f of types[t] ?? []) {
+      const base = f.type.replace(/\[\]$/, '');
+      if (types[base] && base !== primary && !deps.includes(base)) {
+        deps.push(base);
+        visit(base);
+      }
+    }
+  };
+  visit(primary);
+  const direct = types[primary] ?? [];
+  const primaryStr = `${primary}(${direct.map((f) => `${f.type} ${f.name}`).join(',')})`;
+  const depsStr = deps
+    .sort()
+    .map((t) => `${t}(${types[t]!.map((f) => `${f.type} ${f.name}`).join(',')})`)
+    .join('');
+  return primaryStr + depsStr;
+}
+
+function refStructHash(primary: string, types: RefTypes, data: Record<string, unknown>): Uint8Array {
+  const typeHash = refKeccak(refUtf8(refEncodeType(primary, types)));
+  const parts: Uint8Array[] = [];
+  for (const f of types[primary] ?? []) {
+    if (types[f.type]) {
+      parts.push(refStructHash(f.type, types, data[f.name] as Record<string, unknown>));
+    } else {
+      switch (f.type) {
+        case 'address':
+          parts.push(refAddress(String(data[f.name])));
+          break;
+        case 'bytes32':
+          parts.push(refBytes32(String(data[f.name])));
+          break;
+        case 'uint8':
+        case 'uint256':
+          parts.push(refWord(BigInt(data[f.name] as never)));
+          break;
+        case 'string':
+          parts.push(refKeccak(refUtf8(String(data[f.name]))));
+          break;
+        default:
+          throw new Error(`type non gere: ${f.type}`);
+      }
+    }
+  }
+  return refKeccak(typeHash, ...parts);
+}
+
+function refDomainSeparator(domain: {
+  name: string;
+  version: string;
+  chainId: bigint | number;
+  verifyingContract?: string;
+}): Uint8Array {
+  const fields: RefField[] = [
+    { name: 'name', type: 'string' },
+    { name: 'version', type: 'string' },
+    { name: 'chainId', type: 'uint256' },
+  ];
+  if (domain.verifyingContract !== undefined) fields.push({ name: 'verifyingContract', type: 'address' });
+  return refStructHash('EIP712Domain', { EIP712Domain: fields }, domain as unknown as Record<string, unknown>);
+}
+
+function refDigest(
+  primary: string,
+  types: RefTypes,
+  domain: { name: string; version: string; chainId: bigint | number; verifyingContract?: string },
+  data: Record<string, unknown>,
+): string {
+  return (
+    '0x' +
+    Buffer.from(refKeccak(new Uint8Array([0x19, 0x01]), refDomainSeparator(domain), refStructHash(primary, types, data))).toString('hex')
+  );
+}
+
+// ------------------ tests ------------------
+
+test('privateKeyToAddress derive l adresse connue du priv key 1', () => {
   expect(privateKeyToAddress(PK_ONE).toLowerCase()).toBe(ADDR_PK_ONE.toLowerCase());
 });
 
-test('signOrder est deterministe et lien au signataire', () => {
-  const a = signOrder(baseOrder, PK_ONE);
-  const b = signOrder(baseOrder, PK_ONE);
+test('calculateOrderAmounts : BUY maker=USD & taker=shares, SELL inverse', () => {
+  // BUY: maker fournit le montant monetaire et recoit les tokens.
+  const buy = calculateOrderAmounts('BUY', 0.52, 10);
+  expect(buy).toEqual({ makerAmount: 5_200_000n, takerAmount: 10_000_000n });
+  // SELL: maker fournit les tokens et recoit le montant monetaire.
+  const sell = calculateOrderAmounts('SELL', 0.52, 10);
+  expect(sell).toEqual({ makerAmount: 10_000_000n, takerAmount: 5_200_000n });
+  // flux de valeur : la monnaie est 0.52 × 10 = 5.20 (6 dp) dans chaque sens.
+  expect(buy.makerAmount).toBe(sell.takerAmount);
+  expect(buy.takerAmount).toBe(sell.makerAmount);
+});
+
+test('orderDigest reproduit le vecteur de reference viem (exchange standard, BUY)', () => {
+  const d = orderDigest(fixedOrder());
+  expect('0x' + Buffer.from(d).toString('hex')).toBe(VEC_BUY_DIGEST);
+});
+
+test('orderDigest reproduit le vecteur viem pour SELL (flux inverses)', () => {
+  const sell = fixedOrder({
+    makerAmount: 10_000_000n,
+    takerAmount: 5_200_000n,
+    side: ORDER_SIDE.SELL,
+  });
+  expect('0x' + Buffer.from(orderDigest(sell)).toString('hex')).toBe(VEC_SELL_DIGEST);
+});
+
+test('le choix de l exchange (neg_risk) change le digest ; vecteur viem neg-risk', () => {
+  const neg = fixedOrder({ makerAmount: 999_999n, takerAmount: 3_000_000n });
+  const dNeg = orderDigest(neg, POLYMARKET_NEG_RISK_DOMAIN);
+  expect('0x' + Buffer.from(dNeg).toString('hex')).toBe(VEC_NEG_RISK_BUY_DIGEST);
+  const dStd = orderDigest(neg, POLYMARKET_DOMAIN);
+  expect(Buffer.from(dNeg).toString('hex')).not.toBe(Buffer.from(dStd).toString('hex'));
+  expect(POLYMARKET_NEG_RISK_DOMAIN.verifyingContract.toLowerCase()).toBe('0xe2222d279d744050d28e00520010520000310f59');
+});
+
+test('domainSeparator inclut le typeHash EIP712Domain (constat 1 PALLAS-M02)', () => {
+  const ds = domainSeparator({
+    name: 'Ether Mail',
+    version: '1',
+    chainId: 1n,
+    verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+  });
+  const refDs = refDomainSeparator({
+    name: 'Ether Mail',
+    version: '1',
+    chainId: 1n,
+    verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+  });
+  expect('0x' + Buffer.from(ds).toString('hex')).toBe('0x' + Buffer.from(refDs).toString('hex'));
+  expect(Buffer.from(ds).toString('hex')).toHaveLength(64);
+});
+
+test('encodeOrderData : chaque champ atomique occupe un mot ABI de 32 octets', () => {
+  const enc = encodeOrderData(fixedOrder());
+  expect(enc.length).toBe(32 + POLYMARKET_ORDER_TYPES.Order.length * 32);
+  const at = (i: number): string => Buffer.from(enc.subarray(32 + i * 32, 32 + (i + 1) * 32)).toString('hex');
+  // typeHash en tete.
+  expect(Buffer.from(enc.subarray(0, 32)).toString('hex')).toBe(Buffer.from(orderTypeHash()).toString('hex'));
+  // salt.
+  expect(at(0)).toBe(FIXED_SALT.toString(16).padStart(64, '0'));
+  // side et signatureType (uint8) : un MOT COMPLET de 32 octets, pas 1 octet (constat 2).
+  expect(at(6)).toBe('00'.repeat(31) + '00'); // side = 0 (BUY)
+  expect(at(7)).toBe('00'.repeat(31) + '00'); // signatureType = 0 (EOA)
+  expect(enc.length % 32).toBe(0);
+});
+
+test('hasher de reference independant : reproduit le vecteur officiel Ether Mail', () => {
+  const d = refDigest(
+    'Mail',
+    {
+      Person: [
+        { name: 'name', type: 'string' },
+        { name: 'wallet', type: 'address' },
+      ],
+      Mail: [
+        { name: 'from', type: 'Person' },
+        { name: 'to', type: 'Person' },
+        { name: 'contents', type: 'string' },
+      ],
+    },
+    { name: 'Ether Mail', version: '1', chainId: 1n, verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC' },
+    {
+      from: { name: 'Cow', wallet: '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826' },
+      to: { name: 'Bob', wallet: '0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB' },
+      contents: 'Hello, Bob!',
+    },
+  );
+  expect(d).toBe(VEC_EIP712_MAIL_DIGEST);
+});
+
+test('hasher de reference independant : croise le digest d ordre Polymarket', () => {
+  const ref = refDigest(
+    'Order',
+    { Order: POLYMARKET_ORDER_TYPES.Order as unknown as RefField[] },
+    { name: 'Polymarket CTF Exchange', version: '2', chainId: 137n, verifyingContract: POLYMARKET_DOMAIN.verifyingContract },
+    {
+      salt: FIXED_SALT,
+      maker: MAKER,
+      signer: MAKER,
+      tokenId: TOKEN,
+      makerAmount: 5200000n,
+      takerAmount: 10000000n,
+      side: ORDER_SIDE.BUY,
+      signatureType: SIGNATURE_TYPE.EOA,
+      timestamp: T_MILLIS,
+      metadata: ZERO32,
+      builder: ZERO32,
+    },
+  );
+  expect(ref).toBe(VEC_BUY_DIGEST);
+  expect('0x' + Buffer.from(orderDigest(fixedOrder())).toString('hex')).toBe(ref);
+});
+
+test('signOrder deterministe, 65 octets, signataire retrouve par recuperation', () => {
+  const a = signOrder(fixedOrder(), PK_ONE);
+  const b = signOrder(fixedOrder(), PK_ONE);
   expect(a.digest).toBe(b.digest);
   expect(a.signature).toBe(b.signature);
-  expect(a.signature).toHaveLength(130); // r||s||v = 65 octets hex
-  expect([0, 1]).toContain(a.recoveryParam);
-  const v = Number.parseInt(a.signature.slice(-2), 16);
-  expect([27, 28]).toContain(v);
-  expect(a.signer.toLowerCase()).toBe(ADDR_PK_ONE.toLowerCase());
-});
-
-test('signature non triviale : changer un champ change digest et signature', () => {
-  const changed = { ...baseOrder, nonce: 42n };
-  const base = signOrder(baseOrder, PK_ONE);
-  const mod = signOrder(changed, PK_ONE);
-  expect(base.digest).not.toBe(mod.digest);
-  expect(base.signature).not.toBe(mod.signature);
-});
-
-test('recoverSignerAddress retrouve le signataire depuis le digest', () => {
-  const signed = signOrder(baseOrder, PK_ONE);
-  const recovered = recoverSignerAddress(signed.digest, signed.signature);
+  expect(a.signature).toHaveLength(130);
+  const recovered = recoverSignerAddress(a.digest, a.signature);
   expect(recovered.toLowerCase()).toBe(ADDR_PK_ONE.toLowerCase());
-  // signatureType environnement : recovery >= 0 ; v = 27+recovery => valide
-  expect(recovered).toBe(signed.signer);
+  expect(a.signer.toLowerCase()).toBe(ADDR_PK_ONE.toLowerCase());
+  // surete : la signature correspond bien au digest viem de reference.
+  expect(a.digest).toBe(VEC_BUY_DIGEST.slice(2));
 });
 
-test('orderTypeHash et domainSeparator stables et deterministes', () => {
-  const th1 = Buffer.from(orderTypeHash()).toString('hex');
-  const th2 = Buffer.from(orderTypeHash()).toString('hex');
-  expect(th1).toBe(th2);
-  expect(th1).toHaveLength(64);
-  const ds = Buffer.from(domainSeparator()).toString('hex');
-  expect(ds).toHaveLength(64);
-  const chainId = POLYMARKET_DOMAIN.chainId;
-  expect(chainId).toBe(137n);
-  expect(POLYMARKET_ORDER_TYPES.Order).toHaveLength(11);
-});
-
-test('signEip191 deterministe, 65 octets, sensible au message', () => {
-  const msg = 'apiKey1230';
-  const s1 = signEip191(msg, PK_ONE);
-  const s2 = signEip191(msg, PK_ONE);
-  expect(s1).toBe(s2);
-  expect(s1).toHaveLength(130);
-  expect(signEip191(msg + 'x', PK_ONE)).not.toBe(s1);
-});
-
-test('signApiCreds retourne nonce/timestamp/signature exploitables', () => {
-  const c = signApiCreds('apiKey-abc', 123456, 1779243518, PK_ONE);
-  expect(c.nonce).toBe('123456');
-  expect(c.timestamp).toBe('1779243518');
-  expect(c.signature).toHaveLength(130);
-});
-
-test('gros tokenId uint256 (au dela de 64 bits) est encode sans troncature', () => {
-  const order = {
-    ...baseOrder,
-    tokenId: 2n ** 250n + 12345n, // > u64
-  };
+test('gros tokenId au dela de 64 bits encode sans troncature', () => {
+  const order = fixedOrder({ tokenId: 2n ** 250n + 12345n });
   const signed = signOrder(order, PK_ONE);
   expect(signed.digest).toHaveLength(64);
-  const recovered = recoverSignerAddress(signed.digest, signed.signature);
-  expect(recovered.toLowerCase()).toBe(ADDR_PK_ONE.toLowerCase());
+  expect(recoverSignerAddress(signed.digest, signed.signature).toLowerCase()).toBe(ADDR_PK_ONE.toLowerCase());
 });
 
 test('adresse invalide => throw', () => {
-  expect(() =>
-    signOrder({ ...baseOrder, maker: '0x123' } as OrderToSign, PK_ONE)
-  ).toThrow(/adresse invalide/);
+  expect(() => signOrder({ ...fixedOrder(), maker: '0x123' }, PK_ONE)).toThrow(/adresse invalide/);
 });
 
-test('buildSignedOrderPayload monte un payload CLOB exploitable', () => {
+test('randomSalt reste dans le domaine des nombres JSON safe', () => {
+  const s = randomSalt();
+  expect(s).toBeGreaterThan(0n);
+  expect(s).toBeLessThan(1n << 53n);
+  expect(Number.isSafeInteger(Number(s))).toBe(true);
+});
+
+test('signClobAuth (L1) reproduit le vecteur viem + signature 65 octets', () => {
+  const c = signClobAuth(MAKER, 1786000000, 0, PK_ONE);
+  expect(c.address).toBe(MAKER);
+  expect(c.timestamp).toBe('1786000000');
+  expect(c.nonce).toBe('0');
+  expect(c.signature).toMatch(/^0x[0-9a-f]{130}$/);
+  const digest = clobAuthDigest({ address: MAKER, timestamp: '1786000000', nonce: 0n });
+  expect('0x' + Buffer.from(digest).toString('hex')).toBe(VEC_CLOB_AUTH_DIGEST);
+  const recovered = recoverSignerAddress(Buffer.from(digest), c.signature.slice(2));
+  expect(recovered.toLowerCase()).toBe(ADDR_PK_ONE.toLowerCase());
+});
+
+test('buildSignedOrderPayload : wire V2 complet (montants, side, timestamp millis, GTC/GDT)', () => {
   const p = buildSignedOrderPayload(
-    { marketId: 'mkt-1', price: 0.55, size: 100, side: 'BUY', tokenId: 2n ** 250n + 1n },
+    { side: 'BUY', price: 0.52, size: 10, tokenId: TOKEN, salt: FIXED_SALT, timestampMillis: T_MILLIS },
     '0x322135Fc8e7e0a1EfE2476c9aa8D57657436F9cB',
     PK_ONE,
-    { nonce: 1n }
   );
-  expect(p.order.maker.toLowerCase()).toBe('0x322135fc8e7e0a1efe2476c9aa8d57657436f9cb');
-  expect(p.order.taker).toBe('0x0000000000000000000000000000000000000000');
-  expect(p.order.tokenId).toBe((2n ** 250n + 1n).toString());
-  expect(p.order.signatureType).toBe(1);
-  expect(p.order.feeRateBps).toBe('0');
-  expect(p.signature).toMatch(/^0x[0-9a-f]{130}$/);
-  expect(p.side).toBe('BUY');
-  expect(p.price).toBe('0.55');
-  expect(p.order.nonce).not.toBe('0'); // nonce aléatoire, non reproduit
+  expect(p.order.side).toBe('BUY');
+  expect(p.order.signatureType).toBe(SIGNATURE_TYPE.EOA);
+  expect(p.order.makerAmount).toBe('5200000'); // USD (6 dp)
+  expect(p.order.takerAmount).toBe('10000000'); // shares (6 dp)
+  expect(p.order.timestamp).toBe(T_MILLIS.toString()); // millisecondes
+  expect(p.order.expiration).toBe('0'); // GTC par defaut
+  expect(p.order.metadata).toBe(ZERO32);
+  expect(p.order.builder).toBe(ZERO32);
+  expect(p.order.signature).toMatch(/^0x[0-9a-f]{130}$/);
+  expect(p.orderType).toBe('GTC');
+  expect(Number(p.order.salt)).toBe(Number(FIXED_SALT));
+  expect(p.typed.makerAmount).toBe(5_200_000n);
+  expect(p.typed.takerAmount).toBe(10_000_000n);
+  expect(p.typed.side).toBe(ORDER_SIDE.BUY);
+
+  const gtd = buildSignedOrderPayload(
+    { side: 'SELL', price: 0.52, size: 10, tokenId: TOKEN, salt: FIXED_SALT, timestampMillis: T_MILLIS, expirationSeconds: 2000000000n },
+    '0x322135Fc8e7e0a1EfE2476c9aa8D57657436F9cB',
+    PK_ONE,
+  );
+  expect(gtd.orderType).toBe('GTD');
+  expect(gtd.order.expiration).toBe('2000000000');
+  expect(gtd.order.side).toBe('SELL');
+  expect(gtd.order.makerAmount).toBe('10000000'); // SELL : maker = shares
+  expect(gtd.order.takerAmount).toBe('5200000'); // taker = USD
+});
+
+test('la structure Order V2 ne contient plus taker/nonce/feeRateBps/expiration', () => {
+  const names = POLYMARKET_ORDER_TYPES.Order.map((f) => f.name);
+  expect(names).toEqual([
+    'salt', 'maker', 'signer', 'tokenId', 'makerAmount', 'takerAmount',
+    'side', 'signatureType', 'timestamp', 'metadata', 'builder',
+  ]);
+  expect(orderStructHash(fixedOrder())).toBeDefined();
 });

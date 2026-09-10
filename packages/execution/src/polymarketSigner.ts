@@ -1,11 +1,21 @@
 /**
- * Signature CLOB Polymarket — EIP-712 (order) + EIP-191 (api creds).
+ * Signature CLOB Polymarket V2 — EIP-712 (ordre) + EIP-712 ClobAuth (credentials L1).
  *
- * IMPORTANT : le schéma EIP-712 ci-dessous (domain et structure Order) suit la
- * documentation CLOB Polymarket a date. Il DOIT etre valide contre l'API live
- * avant d'autoriser la production d'ordres signes : voir `SIGNATURE_SCHEMA_VALIDATED`
- * dans le client — tant que ce flag n'est pas passe a true, aucun ordre signe
- * n'est emis (fail-closed).
+ * Sources verifiees le 2026-09-09 :
+ * - docs.polymarket.com/trading/place-orders  (structure Order V2, domain, montants, wire)
+ * - docs.polymarket.com/getting-started/api    (auth L1 ClobAuth + L2 HMAC headers)
+ * - verification croisee DES digests via viem 2.56.3 (impl. de reference) : voir tests.
+ *
+ * Schema V2 signe (11 champs, PAS de taker/nonce/feeRateBps/expiration) :
+ *   Order(uint256 salt,address maker,address signer,uint256 tokenId,
+ *         uint256 makerAmount,uint256 takerAmount,uint8 side,uint8 signatureType,
+ *         uint256 timestamp,bytes32 metadata,bytes32 builder)
+ *   domain : name "Polymarket CTF Exchange", version "2", chainId 137,
+ *            verifyingContract = exchange (standard ou neg-risk selon le marche).
+ *
+ * GATE : tant que le schema n'a PAS ete valide contre l'API live, aucun ordre
+ * signe n'est emis (fail-closed). Voir `schemaGate.ts` — plus AUCUN booléen de
+ * constructeur ne permet de contourner cette preuve (PALLAS-M02, constat 5).
  *
  * Crypto 100% pure JS (@noble) : secp256k1 (RFC6979), keccak256.
  */
@@ -21,43 +31,96 @@ type RecoverSignature = (
 // noble 1.x ne type pas recoverPublicKey sur le module `secp256k1` (gap de typages)
 const recoverStatic = secp256k1 as unknown as { recoverPublicKey: RecoverSignature };
 
-/** Domain EIP-712 polymarket (documente). A re-valider en live si besoin. */
-export const POLYMARKET_DOMAIN = {
-  name: 'Polymarket CTF Exchange',
-  version: '1',
-  chainId: 137n,
-  verifyingContract: '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E',
+/** Type atomique EIP-712 du domaine (standard, identique pour standard et neg-risk). */
+export const EIP712_DOMAIN_TYPE = 'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)';
+
+/** Verifyng contracts CLOB (docs place-orders : "Select the Exchange and Signing Path"). */
+export const POLYMARKET_EXCHANGES = {
+  standard: '0xE111180000d2663C0091e4f400237545B87B996B',
+  negRisk: '0xe2222d279d744050d28e00520010520000310F59',
 } as const;
 
-/** Structure EIP-712 de l'ordre CLOB (champs atomiques). */
+/** Domain EIP-712 d'un exchange Polymarket (version "2"). */
+export type PolymarketDomain = {
+  name: string;
+  version: string;
+  chainId: bigint;
+  verifyingContract: string;
+};
+
+function polymarketDomain(verifyingContract: string): PolymarketDomain {
+  return {
+    name: 'Polymarket CTF Exchange',
+    version: '2',
+    chainId: 137n,
+    verifyingContract,
+  };
+}
+
+/** Domain EIP-712 de l'exchange standard (version "2"). */
+export const POLYMARKET_DOMAIN: PolymarketDomain = polymarketDomain(POLYMARKET_EXCHANGES.standard);
+
+/** Domain EIP-712 de l'exchange neg-risk (meme nom, contract different). */
+export const POLYMARKET_NEG_RISK_DOMAIN: PolymarketDomain = polymarketDomain(POLYMARKET_EXCHANGES.negRisk);
+
+/** Structure EIP-712 de l'ordre CLOB V2 (11 champs signes, sans expiration). */
 export const POLYMARKET_ORDER_TYPES = {
   Order: [
     { name: 'salt', type: 'uint256' },
     { name: 'maker', type: 'address' },
     { name: 'signer', type: 'address' },
-    { name: 'taker', type: 'address' },
     { name: 'tokenId', type: 'uint256' },
     { name: 'makerAmount', type: 'uint256' },
     { name: 'takerAmount', type: 'uint256' },
-    { name: 'expiration', type: 'uint256' },
-    { name: 'nonce', type: 'uint256' },
-    { name: 'feeRateBps', type: 'uint256' },
+    { name: 'side', type: 'uint8' },
     { name: 'signatureType', type: 'uint8' },
+    { name: 'timestamp', type: 'uint256' },
+    { name: 'metadata', type: 'bytes32' },
+    { name: 'builder', type: 'bytes32' },
   ],
 } as const;
+
+export const ORDER_TYPE_STRING =
+  'Order(uint256 salt,address maker,address signer,uint256 tokenId,uint256 makerAmount,uint256 takerAmount,uint8 side,uint8 signatureType,uint256 timestamp,bytes32 metadata,bytes32 builder)';
+
+/** side (typed data) : 0=BUY, 1=SELL — et signature types (docs place-orders). */
+export const ORDER_SIDE = { BUY: 0, SELL: 1 } as const;
+export const SIGNATURE_TYPE = { EOA: 0, PROXY: 1, SAFE: 2, DEPOSIT_WALLET: 3 } as const;
+
+/** Domain/type du payload L1 ClobAuth (docs getting-started/api). */
+export const CLOB_AUTH_DOMAIN = {
+  name: 'ClobAuthDomain',
+  version: '1',
+  chainId: 137n,
+} as const;
+
+export const CLOB_AUTH_TYPES = {
+  ClobAuth: [
+    { name: 'address', type: 'address' },
+    { name: 'timestamp', type: 'string' },
+    { name: 'nonce', type: 'uint256' },
+    { name: 'message', type: 'string' },
+  ],
+} as const;
+
+export const CLOB_AUTH_MESSAGE =
+  'This message attests that I control the given wallet';
 
 export interface OrderToSign {
   salt: bigint;
   maker: string;
   signer: string;
-  taker: string;
   tokenId: bigint;
   makerAmount: bigint;
   takerAmount: bigint;
-  expiration: bigint;
-  nonce: bigint;
-  feeRateBps: bigint;
+  /** 0 = BUY, 1 = SELL. */
+  side: number;
   signatureType: number;
+  /** Unix millisecondes (champ signe). */
+  timestamp: bigint;
+  /** bytes32 hex (0x + 64 hex) — zeros par defaut. */
+  metadata: string;
+  builder: string;
 }
 
 export interface SignedOrder {
@@ -109,47 +172,73 @@ function toBytesAddress(addr: string): Uint8Array {
   return pad32(Buffer.from(clean, 'hex'), 160);
 }
 
-function toBytesU8(v: number): Uint8Array {
-  return toBytesUint(v).slice(31);
+function toBytes32(hexVal: string): Uint8Array {
+  const clean = hexVal.replace(/^0x/i, '');
+  if (clean.length !== 64) throw new Error(`bytes32 invalide: ${hexVal}`);
+  return Buffer.from(clean, 'hex');
 }
 
-/** Encodage de type EIP-712 (plat, champs atomiques). */
-export function encodeOrderType(types = POLYMARKET_ORDER_TYPES.Order): string {
-  const fields = types.map((f) => `${f.name} ${f.type}`).join(',');
-  return `Order(${fields})`;
-}
+// ------------------ EIP-712 bas niveau ------------------
 
-/** typeHash = keccak(encodeType) */
+/** typeHash = keccak(encodeType(Order)). */
 export function orderTypeHash(): Uint8Array {
-  return keccak(utf8(encodeOrderType()));
+  return keccak(utf8(ORDER_TYPE_STRING));
 }
 
-/** domainSeparator = keccak(encodeData(EIP712Domain)). */
-export function domainSeparator(domain = POLYMARKET_DOMAIN): Uint8Array {
-  const nameHash = keccak(utf8(domain.name));
-  const versionHash = keccak(utf8(domain.version));
-  const chain = toBytesUint(domain.chainId);
-  const contract = toBytesAddress(domain.verifyingContract);
-  return keccak(nameHash, versionHash, chain, contract);
+/**
+ * domainSeparator conforme au standard : keccak(EIP712DomainTypeHash || nameHash ||
+ * versionHash || chainId || verifyingContract). Le typeHash du domaine etait
+ * OMIS par la version precedente (PALLAS-M02, constat 1).
+ */
+export function domainSeparator(domain: { name: string; version: string; chainId: bigint; verifyingContract?: string }): Uint8Array {
+  const hasContract = domain.verifyingContract !== undefined;
+  const typeString = hasContract
+    ? EIP712_DOMAIN_TYPE
+    : 'EIP712Domain(string name,string version,uint256 chainId)';
+  const parts: Uint8Array[] = [
+    keccak(utf8(typeString)),
+    keccak(utf8(domain.name)),
+    keccak(utf8(domain.version)),
+    toBytesUint(domain.chainId),
+  ];
+  if (hasContract) {
+    parts.push(toBytesAddress(domain.verifyingContract!));
+  }
+  return keccak(...parts);
 }
 
-/** hashStruct d'un ordre : keccak(typeHash || encodeData(flat, atomique)). */
-export function orderStructHash(order: OrderToSign): Uint8Array {
-  const data = [
+/**
+ * Encodage EIP-712 des champs atomiques de l'ordre : typeHash || (11 × 32 octets).
+ * Chaque champ atomique (y compris side/signatureType, uint8) occupe UN MOT
+ * ABI de 32 octets (PALLAS-M02, constat 2).
+ */
+export function encodeOrderData(order: OrderToSign): Uint8Array {
+  const words = [
     orderTypeHash(),
     toBytesUint(order.salt),
     toBytesAddress(order.maker),
     toBytesAddress(order.signer),
-    toBytesAddress(order.taker),
     toBytesUint(order.tokenId),
     toBytesUint(order.makerAmount),
     toBytesUint(order.takerAmount),
-    toBytesUint(order.expiration),
-    toBytesUint(order.nonce),
-    toBytesUint(order.feeRateBps),
-    toBytesU8(order.signatureType),
+    toBytesUint(order.side),
+    toBytesUint(order.signatureType),
+    toBytesUint(order.timestamp),
+    toBytes32(order.metadata),
+    toBytes32(order.builder),
   ];
-  return keccak(...data);
+  const total = words.reduce((n, w) => n + w.length, 0);
+  const buf = new Uint8Array(total);
+  let off = 0;
+  for (const w of words) {
+    buf.set(w, off);
+    off += w.length;
+  }
+  return buf;
+}
+
+export function orderStructHash(order: OrderToSign): Uint8Array {
+  return keccak(encodeOrderData(order));
 }
 
 /** Digest final EIP-712 : keccak(0x19 0x01 || domainSeparator || structHash). */
@@ -167,10 +256,10 @@ export function privateKeyToAddress(privKey: Uint8Array | string): string {
 }
 
 /**
- * Signe un ordre CLOB (EIP-712). Signature r||s||v(27+recovery), hex sans 0x.
+ * Signe un ordre CLOB V2 (EIP-712). Signature r||s||v(27+recovery), hex sans 0x.
  */
-export function signOrder(order: OrderToSign, privKey: Uint8Array | string): SignedOrder {
-  const digest = orderDigest(order);
+export function signOrder(order: OrderToSign, privKey: Uint8Array | string, domain = POLYMARKET_DOMAIN): SignedOrder {
+  const digest = orderDigest(order, domain);
   const sig = secp256k1.sign(digest, typeof privKey === 'string' ? Buffer.from(privKey.replace(/^0x/i, ''), 'hex') : privKey);
   const compact = sig.toCompactRawBytes(); // r||s (64)
   const recovery = sig.recovery;
@@ -201,12 +290,7 @@ export function recoverSignerAddress(digest: Uint8Array | string, signatureHex: 
   return '0x' + Buffer.from(hash.slice(-20)).toString('hex');
 }
 
-// ------------------ credentials API (EIP-191 personal_sign) ------------------
-
-/**
- * Signature personnelle EIP-191 : keccak("\x19Ethereum Signed Message:\n" + len + msg).
- * Utilisée pour les api creds (ni keys, timestamp, nonce).
- */
+/** Signature personnelle EIP-191 (utile hors CLOB). */
 export function signEip191(message: string, privKey: Uint8Array | string): string {
   const prefix = utf8(`\u0019Ethereum Signed Message:\n${message.length}`);
   const digest = keccak(prefix, utf8(message));
@@ -217,111 +301,194 @@ export function signEip191(message: string, privKey: Uint8Array | string): strin
   return Buffer.concat([Buffer.from(sig.toCompactRawBytes()), Buffer.from([27 + recovery])]).toString('hex');
 }
 
+// ------------------ credentials L1 (EIP-712 ClobAuth) ------------------
+
+export const CLOB_AUTH_TYPE_STRING =
+  'ClobAuth(address address,string timestamp,uint256 nonce,string message)';
+
+/** typeHash du type ClobAuth */
+export function clobAuthTypeHash(): Uint8Array {
+  return keccak(utf8(CLOB_AUTH_TYPE_STRING));
+}
+
 /**
- * Produit le payload api creds attendu par l'API CLOB pour les endpoints prives :
- * { nonce, timestamp, signature }.
- *
- * NOTE : la forme exacte du message signe (concat apiKey+nonce+timestamp) doit
- * etre confirmee contre la doc live avant usage reel — voir flag de validation.
+ * Hash struct du payload ClobAuth L1 (EIP-712). Remplace l'ancien schéma EIP-191
+ * "concat apiKey+nonce+timestamp" (PALLAS-M02, constat 6 + docs getting-started/api).
  */
-export function signApiCreds(
-  apiKey: string,
+export function clobAuthStructHash(message: { address: string; timestamp: string; nonce: bigint }): Uint8Array {
+  return keccak(
+    clobAuthTypeHash(),
+    toBytesAddress(message.address),
+    keccak(utf8(message.timestamp)),
+    toBytesUint(message.nonce),
+    keccak(utf8(CLOB_AUTH_MESSAGE)),
+  );
+}
+
+/** Digest EIP-712 du payload ClobAuth. */
+export function clobAuthDigest(message: { address: string; timestamp: string; nonce: bigint }): Uint8Array {
+  return keccak(
+    new Uint8Array([0x19, 0x01]),
+    domainSeparator(CLOB_AUTH_DOMAIN as unknown as { name: string; version: string; chainId: bigint; verifyingContract?: string }),
+    clobAuthStructHash(message),
+  );
+}
+
+/**
+ * Signature L1 pour creer/deriver les credentials API (EIP-712 ClobAuth).
+ * Envoie { nonce, timestamp, signature } + address a /auth/create-api-key ou
+ * /auth/derive-api-key.
+ */
+export function signClobAuth(
+  address: string,
+  timestampSeconds: bigint | number,
   nonce: bigint | number,
-  timestamp: bigint | number,
   privKey: Uint8Array | string
-): { nonce: string; timestamp: string; signature: string } {
-  const message = `${apiKey}${nonce.toString()}${timestamp.toString()}`;
+): { address: string; nonce: string; timestamp: string; signature: string } {
+  const ts = timestampSeconds.toString();
+  const n = BigInt(nonce);
+  const digest = clobAuthDigest({ address, timestamp: ts, nonce: n });
+  const pk = typeof privKey === 'string' ? Buffer.from(privKey.replace(/^0x/i, ''), 'hex') : privKey;
+  const sig = secp256k1.sign(digest, pk);
+  const recovery = sig.recovery;
+  if (recovery === undefined) throw new Error('signature sans recovery bit');
   return {
-    nonce: nonce.toString(),
-    timestamp: timestamp.toString(),
-    signature: signEip191(message, privKey),
+    address,
+    nonce: n.toString(),
+    timestamp: ts,
+    signature: `0x${Buffer.concat([Buffer.from(sig.toCompactRawBytes()), Buffer.from([27 + recovery])]).toString('hex')}`,
   };
 }
 
-// ------------------ payload d'ordre CLOB signe ------------------
+// ------------------ ordre CLOB signe ------------------
 
-/** Tokens Polymarket : 6 décimales. */
-const CLOB_DECIMALS = 1_000_000n;
+/** Tokens Polymarket : 6 decimales. */
+export const CLOB_DECIMALS = 1_000_000n;
+
+/**
+ * Montants maker/taker selon le sens de l'ordre (docs place-orders) :
+ * - BUY  : maker = montant monetaire (price×size), taker = nombre de shares.
+ * - SELL : maker = nombre de shares, taker = montant monetaire (price×size).
+ * Les montants sont en unites 6 decimales.
+ */
+export function calculateOrderAmounts(side: 'BUY' | 'SELL', price: number, size: number): { makerAmount: bigint; takerAmount: bigint } {
+  if (!(price > 0) || !(size > 0)) throw new Error('price et size doivent etre positifs');
+  const usd = BigInt(Math.round(price * size * 1_000_000));
+  const shares = BigInt(Math.round(size * 1_000_000));
+  if (side === 'BUY') {
+    return { makerAmount: usd, takerAmount: shares };
+  }
+  return { makerAmount: shares, takerAmount: usd };
+}
+
+/** Salt aleatoire dans [1, 2^53) : serialise en nombre JSON sur le wire (safe). */
+export function randomSalt(): bigint {
+  const cryptoObj = globalThis.crypto as unknown as { getRandomValues(a: Uint8Array): void };
+  const bytes = new Uint8Array(7);
+  cryptoObj.getRandomValues(bytes);
+  const big = BigInt('0x' + Buffer.from(bytes).toString('hex'));
+  return (big % (1n << 53n)) + 1n;
+}
 
 export interface SignedOrderPayload {
+  /** Objet `order` exact du corps POST /order (docs place-orders). */
   order: {
     salt: string;
     maker: string;
     signer: string;
-    taker: string;
     tokenId: string;
     makerAmount: string;
     takerAmount: string;
-    expiration: string;
-    nonce: string;
-    feeRateBps: string;
+    side: 'BUY' | 'SELL';
     signatureType: number;
+    /** Unix millisecondes (champ signe). */
+    timestamp: string;
+    metadata: string;
+    builder: string;
+    /** Unix secondes ; "0" pour un GTC (champ non signe). */
+    expiration: string;
+    signature: string;
   };
-  signature: string; // 0x + 65 octets
-  owner: string;
+  /** orderType est HORS du typed data signe (docs place-orders). */
+  orderType: 'GTC' | 'GTD';
+  /** Champs signes, pour inspection/test. */
+  typed: OrderToSign;
+}
+
+export interface SignedOrderParams {
+  tokenId?: bigint | null;
   side: 'BUY' | 'SELL';
-  price: string;
-  size: string;
+  price: number;
+  size: number;
+  /** "0" = GTC ; sinon timestamp seconds GTD. */
+  expirationSeconds?: bigint | string;
+  signatureType?: number;
+  exchangeAddress?: string;
+  salt?: bigint;
+  timestampMillis?: bigint;
+  metadata?: string;
+  builder?: string;
 }
 
 /**
- * Construit le payload d'ordre CLOB signé (EIP-712) depuis des OrderParams.
+ * Construit l'ordre CLOB V2 signe conforme au wire actuel : domain version "2",
+ * 11 champs signes (pas de taker/nonce/feeRateBps), montants dans le bon sens.
  *
- * Mtps maker/taker convertis en USDe-6 (`price*size` et `size`). tokenId,
- * maker/taker addresses, taker=zero. **Le schéma et le format wire doivent etre
- * valides contre l'API live avant d'etre utilises (flag signedOrdersValidated).**
+ * GATE (PALLAS-M02) : cette fonction N'ENVOIE rien ; l'emission est verrouillee
+ * par `assertSignatureSchemaValidated()` dans le client tant que le schema n'a
+ * pas ete valide contre l'API live.
  */
 export function buildSignedOrderPayload(
-  params: { marketId: string; price: number; size: number; side: 'BUY' | 'SELL'; tokenId?: bigint | null },
+  params: SignedOrderParams,
   signerAddress: string,
-  privKey: Uint8Array | string,
-  opts: { nonce?: bigint; expiration?: bigint; feeRateBps?: bigint } = {}
+  privKey: Uint8Array | string
 ): SignedOrderPayload {
-  const sizeBig = BigInt(Math.round(params.size * 1_000_000));
-  const unitPrice = BigInt(Math.round(params.price * 1_000_000));
-  const isBuy = params.side === 'BUY';
-  const makerAmount = isBuy ? sizeBig : (sizeBig * unitPrice) / 1_000_000n;
-  const takerAmount = isBuy ? (sizeBig * unitPrice) / 1_000_000n : sizeBig;
-  const maker = signerAddress.toLowerCase();
-  const order: OrderToSign = {
-    salt: opts.nonce ?? randomNonce(),
-    maker,
-    signer: maker,
-    taker: '0x0000000000000000000000000000000000000000',
+  const { makerAmount, takerAmount } = calculateOrderAmounts(params.side, params.price, params.size);
+  const sideBits = params.side === 'BUY' ? ORDER_SIDE.BUY : ORDER_SIDE.SELL;
+  const signatureType = params.signatureType ?? SIGNATURE_TYPE.EOA;
+  const expirationSeconds = params.expirationSeconds !== undefined
+    ? params.expirationSeconds.toString()
+    : '0';
+  const domain = params.exchangeAddress
+    ? { ...POLYMARKET_DOMAIN, verifyingContract: params.exchangeAddress.toLowerCase() }
+    : POLYMARKET_DOMAIN;
+  const signer = signerAddress.toLowerCase();
+
+  const typed: OrderToSign = {
+    salt: params.salt ?? randomSalt(),
+    maker: signer,
+    signer,
     tokenId: params.tokenId ?? 0n,
     makerAmount,
     takerAmount,
-    expiration: opts.expiration ?? BigInt(Math.floor(Date.now() / 1000) + 3600),
-    nonce: randomNonce(),
-    feeRateBps: opts.feeRateBps ?? 0n,
-    signatureType: 1,
+    side: sideBits,
+    signatureType,
+    timestamp: params.timestampMillis ?? BigInt(Date.now()),
+    metadata: params.metadata ?? '0x' + '00'.repeat(32),
+    builder: params.builder ?? '0x' + '00'.repeat(32),
   };
-  const signed = signOrder(order, privKey);
+
+  // Ordonner les champs du wire : signature non vide => ce payload est pret a
+  // etre emis ; verifier la porte de validation du schema (fail-closed).
+  const signed = signOrder(typed, privKey, domain);
+
   return {
     order: {
-      salt: order.salt.toString(),
-      maker: order.maker,
-      signer: order.signer,
-      taker: order.taker,
-      tokenId: order.tokenId.toString(),
-      makerAmount: order.makerAmount.toString(),
-      takerAmount: order.takerAmount.toString(),
-      expiration: order.expiration.toString(),
-      nonce: order.nonce.toString(),
-      feeRateBps: order.feeRateBps.toString(),
-      signatureType: order.signatureType,
+      salt: typed.salt.toString(),
+      maker: typed.maker,
+      signer: typed.signer,
+      tokenId: typed.tokenId.toString(),
+      makerAmount: typed.makerAmount.toString(),
+      takerAmount: typed.takerAmount.toString(),
+      side: params.side,
+      signatureType: typed.signatureType,
+      timestamp: typed.timestamp.toString(),
+      metadata: typed.metadata,
+      builder: typed.builder,
+      expiration: expirationSeconds,
+      signature: `0x${signed.signature}`,
     },
-    signature: `0x${signed.signature}`,
-    owner: signed.signer,
-    side: params.side,
-    price: params.price.toFixed(2),
-    size: params.size.toString(),
+    orderType: expirationSeconds === '0' ? 'GTC' : 'GTD',
+    typed,
   };
-}
-
-function randomNonce(): bigint {
-  const bytes = new Uint8Array(16);
-  const cryptoObj = globalThis.crypto as unknown as { getRandomValues(a: Uint8Array): void };
-  cryptoObj.getRandomValues(bytes);
-  return BigInt('0x' + Buffer.from(bytes).toString('hex'));
 }

@@ -6,6 +6,23 @@
 **Scope MVP :** Polymarket uniquement, 1 channel (WebChat), dry-run par defaut
 **Exigence bloquante :** `npm install && npm test && npm run build` fonctionne du premier coup, avec tests verts.
 
+> **⚠️ AUDIT 2026-09-09 (commit `813be02`) — voir `AUDIT-PALLAS-v0.1.md`**
+> Verdict : **prototype fragile**, pas encore « prêt pour dry-run réel ». Les sections ci-dessous ont
+> été recalibrées sur les constats réels de l'audit (et non plus sur les affirmations optimistes de
+> sessions précédentes). Les corrections sont pilotées par 6 missions au format `template_mission.md` :
+>
+> | Mission | Sujet | Priorité |
+> |---|---|---|
+> | `PALLAS-M01` | Risk engine — validation stricte + état réel transmis | 🔴 Critique → ✅ clôturée 2026-09-09 |
+> | `PALLAS-M02` | Signature Polymarket EIP-712 — correction et validation officielle | 🔴 Critique → ✅ clôturée 2026-09-09 |
+> | `PALLAS-M03` | Sandbox bwrap — fix opérationnel + suppression du faux positif réseau | 🟠 Haute |
+> | `PALLAS-M04` | Frontières TS/HTTP — validation runtime stricte, retry, idempotence | 🟠 Haute |
+> | `PALLAS-M05` | Credentials & mémoire — honnêteté du zeroing, fermeture des fuites en clair | 🟡 Moyenne |
+> | `PALLAS-M06` | CI/CD + documentation sobre | 🟡 Moyenne |
+>
+> Aucune nouvelle case ne doit être cochée `[x]` sans que le critère de succès correspondant de la
+> mission associée soit vérifié et journalisé (`mission-PALLAS-M0X-journal.md`).
+
 > **Decision technique clé (Rust via Nix, pas NAPI-RS)**
 > Le risk engine est critique (decide si un trade est execute) : on le veut en Rust pour la surete memoire
 > et la testabilite. Plutot qu'un bindings NAPI-RS (fragile, compile dans le pipe npm, multiplateforme),
@@ -65,6 +82,9 @@
 > l'hote NixOS ; **`bwrap`** (présent au système) est utilise a la place : namespace reseau isole
 > (`--unshare-net`), `--die-with-parent`, allowlist de binaires resolus via PATH, `spawn` en array
 > args (jamais `shell:true`). Revenir a Docker uniquement si un besoin de containers emerge.
+>
+> **⚠️ Correctif audit :** sur l'hôte testé, bwrap échoue systématiquement à la création du namespace
+> réseau (`Failed to create NETLINK_ROUTE socket: Operation not permitted`) — voir `PALLAS-M03`.
 
 ---
 
@@ -91,15 +111,15 @@ pallas/
 │   ├── core/                  # TS — types, config, credentials, sanitizer, dry-run global
 │   ├── risk/                  # TS — facade autour de la CLI Rust (contrat JSON)
 │   ├── execution/             # TS — Polymarket adapter, sandbox, dryRun facade
-│   ├── gateway/               # TS — HTTP/WS server
-│   ├── agent/                 # TS — AI agent, tools, skill loader
-│   └── ledger/                # TS — trade audit trail
+│   ├── gateway/               # TS — HTTP/WS server (VIDE — non commence)
+│   ├── agent/                 # TS — AI agent, tools, skill loader (VIDE — non commence)
+│   └── ledger/                # TS — trade audit trail (VIDE — non commence)
 ├── skills/
-│   └── polymarket/
+│   └── polymarket/            # VIDE — non commence
 ├── tests/
 ├── package.json / tsconfig.json / vitest.config.ts
 ├── shell.nix                   # dev shell obligatoire (linker gcc)
-└── .github/workflows/ci.yml
+└── .github/workflows/ci.yml   # VIDE — aucune pipeline (.gitkeep seulement)
 ```
 
 ---
@@ -108,151 +128,142 @@ pallas/
 
 - [x] Structure monorepo + workspaces npm + tsconfig strict
 - [x] Toolchain Rust via Nix (profile `cargo`+`rustc` + `shell.nix` pour le linker gcc)
-- [ ] Risk engine Rust CLI + tests (couverture 90%+) **— fait : 37 tests verts, couverture a mesurer**
-- [x] Facade TS `@pallas/risk` qui appelle la CLI (contrat JSON stdin/stdout, fail-closed)
-- [ ] CI : npm + cargo, passe du premier coup (Phase 5)
+- [x] Risk engine Rust CLI + tests — **CLI et 37 tests verts confirmes, couverture 92,17% confirmee
+      (objectif 90%+ atteint globalement, pas module par module : main.rs 77%, volatility.rs 87%).
+      Protection live operationnelle : validation stricte des entrees, kill switch reel, etat
+      persistant (circuit breaker, volatilite) transporte entre appels, machine a etats
+      Open→HalfOpen→Closed, NaN traite — 50 tests Rust verts, voir PALLAS-M01, cloturee le 2026-09-09.**
+- [x] Facade TS `@pallas/risk` qui appelle la CLI (contrat JSON stdin/stdout) — **fail-closed sur
+      process/exit non-zero confirme ; PAS de validation runtime du schema JSON retourne
+      (cast aveugle, `packages/risk/src/client.ts:73-90`) — voir PALLAS-M04.**
+- [ ] CI : npm + cargo, passe du premier coup — **`.github/workflows/` ne contient qu'un `.gitkeep`,
+      aucune pipeline — voir PALLAS-M06.**
 
-**Nouveau (session) :** commande de validation reelle — `npm install && npm run build && npm test`
-depuis un etat propre, **plus** `cd crates/risk-engine && cargo test` dans le dev shell. Vert actuel :
-47 tests TS (7 fichiers) + 37 tests Rust. Toute prise doit garder ce vert.
+**Etat verifie (audit 2026-09-09) :** `npm install && npm run build` OK. `npm test` **ROUGE** :
+9 fichiers, 66 tests, **64 reussis / 2 echoues** (sandbox bwrap — voir PALLAS-M03). Rust : 37/37 verts
+(28 unitaires + 6 integration CLI + 3 property tests).
 
-### 0.3 Risk engine Rust — exigences de test (non negociables) — ATTEINTES
+**Etat reel apres PALLAS-M01 (2026-09-09) :** les 5 reserves ci-dessous sont levees (preuves dans
+`docs/mission/mission-PALLAS-M01-journal.md`). `cargo test` 50/50, `npm test` 70/70, typecheck OK.
 
-```rust
-// tests/var_tests.rs
-#[test] fn var_rejects_when_exceeding_limit()
-#[test] fn cvar_exceeds_var_for_skewed_distributions()
-#[test] fn var_with_empty_window_returns_zero()
-#[test] fn var_handles_single_observation()
+### 0.3 Risk engine Rust — exigences de test (non negociables) — ATTEINTES (tests), PAS ATTEINTES (robustesse)
 
-// tests/pipeline_tests.rs
-#[test] fn kill_switch_blocks_all_trades()
-#[test] fn circuit_breaker_blocks_after_consecutive_losses()
-#[test] fn kelly_reduces_size_in_high_volatility()
-#[test] fn full_pipeline_approves_valid_trade()
-#[test] fn full_pipeline_rejects_oversized_order()
-#[test] fn pipeline_is_deterministic()
-
-// property tests (proptest)
-  var_never_negative(pnls)
-  kelly_never_exceeds_bankroll(edge, bankroll)
-```
-
-**Nouveau (session) :** module `lib.rs` publie l'API (tests unitaires 28) + binaire `main.rs`
-(filtre JSON sur stdin → JSON sur stdout, erreurs `{"error":...}` stderr + exit 1). La facade
-`@pallas/risk` bascule sur `PALLAS_RISK_BIN` (override env) pour pointer le binaire compile en release.
+Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a traiter dans PALLAS-M01 :
+- `KILL_SWITCH` gate toujours `Allow` — n'est pas un vrai kill switch (`pipeline.rs:75-80`).
+- L'entree CLI ne transporte que `hist_pnls` — circuit breaker et detecteur de volatilite sont
+  **recrees a leurs valeurs par defaut a chaque appel** (`main.rs:60-65`), donc sans memoire d'etat.
+- Circuit breaker : aucun chemin reel vers `HalfOpen` ; le test `half_open_recovers_to_closed` ne
+  teste aucune recuperation (`circuit_breaker.rs:150-163`).
+- Aucune validation des entrees : un trade avec `market_id=""`, `side="garbage"`,
+  `est_value_usd=-100`, `win_probability=2` est **accepte** (`allowed: true`).
+- `partial_cmp(...).unwrap()` peut paniquer sur NaN (`var.rs:27,44`) — l'API bibliotheque publique
+  n'est pas protegee (seule la frontiere CLI JSON bloque NaN standard).
 
 ---
 
 ## Phase 1 — Securite fondamentale (S2-S3)
 
-### 1.1 Credentials — fail-closed (FAIT dans @pallas/core)
+### 1.1 Credentials — fail-closed (FAIT pour le stockage, PARTIEL pour la memoire)
 - [x] AES-256-GCM + scrypt, fail-closed (throw si cle absente)
-- [x] Zeroing memoire (Buffer.fill(0))
+- [~] Zeroing memoire — **REEL uniquement pour la cle derivee et le buffer dechiffre temporaire.
+      La passphrase (`string`) et les secrets post-`JSON.parse` (`decryptObject`, `loadPolymarketSecrets`)
+      restent en clair en memoire durablement, sans zeroing possible sur des `string` JS — voir
+      PALLAS-M05.**
 - [x] Pas de legacy v1
 - [x] Tests : roundtrip, wrong key, tamper, missing key
 
-### 1.2 Dry-run global (FAIT dans @pallas/core)
+### 1.2 Dry-run global (FAIT, sous reserve d'API de contournement)
 - [x] `dryRun=true` par defaut, un seul flag
 - [x] Desactivation exige confirmation exacte "LIVE" (fail-closed)
-- [x] Pas de `?? false` dissemine
-- [x] `config.ts` ne verifie plus la longueur des cles au chargement (severite au point d'usage)
+- [x] Pas de `?? false` dissemine dangereux pour le dry-run (le seul `?? false` actif porte sur
+      `signedOrdersValidated`, un fallback securise)
+- [x] `config.ts` ne verifie plus la longueur des cles au chargement
+- **Reserve auditee :** le constructeur `PolymarketClient` accepte `isDryRun: () => false` injecte
+  directement (`polymarketClient.ts`) — pratique pour les tests, mais c'est une API de contournement
+  des gardes globales pour tout appelant interne. A restreindre en usage production.
+  (`signedOrdersValidated` supprime — voir PALLAS-M02.)
 
-**Nouveau (session) :** `@pallas/execution/src/dryRun.ts` = facade lecture du flag global. Tous les
-adaptateurs d'exchange fautent LIRE l'etat du dry-run via cette facade ; l'ecriture ne part JAMAIS
-en dry-run (`placeOrder`/`cancelOrder` jettent avant le premier `fetch`).
+### 1.3 Shell execution — sandboxing implemente mais NON FONCTIONNEL sur l'hote teste
+- [x] Sandbox **bubblewrap (bwrap)** codee : allowlist, pas de bash/sh, `spawn` array args
+- [ ] **Isolation reseau verifiee par test — FAUX. `bwrap` echoue systematiquement
+      (`NETLINK_ROUTE socket: Operation not permitted`) ; le test reseau verifie seulement un code
+      de sortie non nul, qui est vrai que le sandbox ait fonctionne ou non — faux positif de
+      securite. Voir PALLAS-M03.**
+- Tests : 5/7 verts, 2 rouges (execution reelle et stdin echouent car bwrap ne demarre jamais le
+  programme protege)
 
-### 1.3 Shell execution — vrai sandboxing (FAIT — variante bwrap)
-- [x] Sandbox **bubblewrap (bwrap)** pour toute execution shell/Python (Docker indisponible sur NixOS)
-- [x] Allowlist de binaires resolus via PATH : python3, python, node, ls, echo (pas de bash/sh)
-- [x] `spawn` avec array arguments, jamais `shell:true`
-- [x] Isolation reseau verifiee par test (`--unshare-net`), timeout, `--die-with-parent`
-- Tests : 7 verts (dont execution reelle `6*7` sous bwrap et blocage reseau)
-
-### 1.4 Input sanitizer (FAIT dans @pallas/core)
+### 1.4 Input sanitizer (FAIT, mais isole)
 - [x] Copie du sanitizer CloddsBot (homoglyphes, zero-width, prompt injection)
 - [x] Perf via Set
 - [x] Tests par categorie (9 verts)
+- **Reserve auditee :** le sanitizer n'est connecte a aucun agent/tool call reel puisque
+  `packages/agent` n'existe pas encore — a cabler des que l'agent existe (PALLAS-M01/M06 croise
+  avec Phase 3, hors scope immediat).
 
 ---
 
 ## Phase 2 — Execution Polymarket (S3-S5)
 
-### 2.1 Polymarket adapter (FAIT — lecture + dry-run, ecriture fail-closed)
+### 2.1 Polymarket adapter (FAIT pour lecture/mocks, PARTIEL pour la robustesse reseau)
 - [x] Client Polymarket CLOB (HTTP natif, aucun SDK) — `listMarkets`, `getOrderbook`, `placeOrder`, `cancelOrder`
-- [x] Reads (markets/orderbook) autorises en dry-run ; **writes bloques en dry-run (fail-closed)**
-- [x] Retry/backoff exponentiel sur erreurs transitoires (2 retries)
-- [x] Mapping CLOB rigoureux : champs string `"true"/"false"` (active/closed) → booleens, `clob_token_ids`
-- [x] Tests : 6 verts (mocking API, dry-run ne touche pas l'API, serialisation CLOB)
-
-**Nouveau (session) :** `MarketSummary.active` (bool) fait partie du contrat retourne. Default
-`baseUrl=https://clob.polymarket.com`, `fetcher` injectable. Erreurs HTTP → throw avec code et corps tronque.
+- [x] Reads autorises en dry-run ; writes bloques en dry-run (fail-closed)
+- [~] Retry/backoff exponentiel — **uniquement sur les GET et uniquement pour `TypeError`
+      (`polymarketClient.ts:108-128`). Aucun retry ni idempotence sur POST/DELETE — voir PALLAS-M04.**
+- [~] Mapping CLOB — **valide seulement contre des fixtures mockees ; aucune validation runtime des
+      nombres/tableaux/identifiants recus reellement de l'API — voir PALLAS-M04.**
+- [x] Tests : 6 verts (mocking API)
 
 ### 2.2 Credentials Polymarket
-- [x] Stockage chiffre via `polymarketSecrets` (AES-256-GCM + cle `PALLAS_CREDENTIAL_KEY`, fail-closed) — 8 tests
-- [ ] Wallet Solana (cle privee base58 ou JSON array)
-- [ ] API key Polymarket (stockage fait ; recuperation live a valider)
-- [x] Signature CLOB des ordres — `polymarketSigner` EIP-712 (domain + struct Order) + EIP-191 (api creds) ;
-      `buildSignedOrderPayload` (uSDC-6, taker zero, nonce aleatoire) ; recovery d'adresse ; crypto `@noble`. 10 tests
-- [x] **Fail-closed leve uniquement via `signedOrdersValidated: true`** — `placeOrder` refuse sans payload signe
-      + flag valide (schema non confirme en live pour l'instant)
-- [x] Tests : roundtrip, wrong key (secrets), determinisme/recovery (signer), gating client
+- [x] Stockage chiffre via `polymarketSecrets` (AES-256-GCM, fail-closed) — 8 tests
+- [ ] Wallet Solana — **non implemente. Le code mentionne meme "wallet Solana" alors que le signer
+      actuel utilise secp256k1/Ethereum (`polymarketSecrets.ts:4-7`) — incoherence a corriger.**
+- [x] API key Polymarket live — stockage + **auth réelle câblée** : L2 HMAC (placeOrder/cancelOrder)
+      + L1 EIP-712 ClobAuth (deriveApiKey), testées via mock serveur — voir PALLAS-M02
+- [x] **Signature CLOB des ordres — clôturée PALLAS-M02 (2026-09-09)** : schéma réécrit en V2
+      officiel (domaine version "2", exchange STD/NEG, 11 champs signés, montants BUY/SELL corrects,
+      mots ABI 32B, `domainSeparator` standard avec typeHash) ; validé contre vecteurs viem 2.56.3 +
+      Ether Mail officiel ; auth L2/L1 câblée ; preuve de schéma via `schemaGate.ts` (fail-closed).
+      **6 constats de l'audit corrigés** (1 domainSeparator, 2 signatureType 32B, 3 montants,
+      4 vecteurs de référence, 5 `signedOrdersValidated` remplacé, 6 headers d'auth).
+      → preuves et détail : `docs/mission/mission-PALLAS-M02-journal.md`
+- [x] Tests unitaires signer : roundtrip, déterminisme, recovery + **vecteurs EIP-712 officiels et
+      clients de référence (viem)** — voir PALLAS-M02
 
-### 2.3 Validation inter-paquets (NOUVELLE etape de session)
-- [x] Build workspace en **project references** : `tsc --build packages/core packages/risk packages/execution`
-  (ordre topologique : execution > core). `package.json` de paquets dependants declare `@pallas/core`.
-- [x] `pretest` = `tsc --build` (dist necessaire a la resolution vitest des exports inter-paquet)
-- [x] `typecheck` = `tsc --build --dry`
-- [x] Migration `node --test`+tsx → **vitest** : 7 fichiers, 47 tests
+### 2.3 Validation inter-paquets
+- [x] Build workspace en project references, ordre topologique
+- [x] `pretest` = `tsc --build`
+- [x] `typecheck` = `tsc --build --dry` (note : mode "dry" moins robuste qu'un vrai `tsc --noEmit`
+      sur un arbre deja a jour — a surveiller)
+- [x] Migration vitest — **compte de tests obsolete dans les sessions precedentes (47→66) ; suite
+      actuellement rouge (2 echecs) — voir Phase 0.**
 
 ---
 
-## Phase 3 — Gateway + Agent + Ledger (S5-S7)
+## Phase 3 — Gateway + Agent + Ledger (S5-S7) — INCHANGE, NON COMMENCE
 
-### 3.1 Gateway HTTP/WebSocket
 - [ ] Serveur Fastify, port configurable
 - [ ] Auth (API key ou JWT)
 - [ ] Rate limiting IP
 - [ ] Health endpoint
 - [ ] WebChat UI
-
-### 3.2 Agent core
 - [ ] Connection Claude API
 - [ ] Tool definitions (trade, read, search)
 - [ ] Input sanitizer avant chaque tool call
 - [ ] Order via `@pallas/execution` (dry-run garde jusqu'a confirmation "LIVE")
+- [ ] Trade ledger (hash SHA-256, calibration confiance/precision, export)
 
-### 3.3 Trade ledger
-- [ ] Capture decision + assert SHA-256
-- [ ] Calibration confiance vs precision
-- [ ] Export JSON/CSV
-- [ ] Tests : hash deterministe, calibration
+## Phase 4 — Skills + Extensibilite (S7-S9) — INCHANGE, NON COMMENCE
 
----
+- [ ] Skill loader (lazy-loading, hot-reload)
+- [ ] Premiere skill Polymarket (fetch markets, place order, portfolio)
 
-## Phase 4 — Skills + Extensibilite (S7-S9)
+## Phase 5 — CI/CD + Documentation (S9-S10) — NON COMMENCE, DEVIENT PRIORITAIRE (PALLAS-M06)
 
-### 4.1 Skill loader (lazy-loading)
-- [ ] Lazy-loading, gate system (env vars, binaires, OS)
-- [ ] Hot-reload
-- [ ] Tests : skill manquante ne crash pas
-
-### 4.2 Premiere skill : Polymarket
-- [ ] Fetch markets, place order, portfolio (via l'adapter Phase 2, dry-run par defaut)
-- [ ] Tests : commandes retournent resultats structures
-
----
-
-## Phase 5 — CI/CD + Documentation (S9-S10)
-
-### 5.1 CI Pipeline
-- [ ] `npm ci`, `cargo test` (dev shell Nix), `npm run typecheck`, `npm test`, `npm run build`
-- [ ] `npm audit --audit-level=high`
-
-### 5.2 Documentation sobre
-- [ ] README : features reelles, pas de badges marketing
-- [ ] docs/ARCHITECTURE.md, SECURITY.md, TRADING.md
-- [ ] Pas de SECURITY_AUDIT.md tant que pas d'audit reel
+- [ ] CI Pipeline (`npm ci`, `cargo test` en dev shell, typecheck, test, build, `npm audit --audit-level=high`)
+- [ ] Documentation sobre : README reel, docs/ARCHITECTURE.md, SECURITY.md, TRADING.md
+- [ ] Pas de SECURITY_AUDIT.md tant que pas d'audit reel — **l'audit du 2026-09-09 EST cet audit
+      reel : `AUDIT-PALLAS-v0.1.md` peut etre reference publiquement une fois les corrections
+      appliquees, sans reecrire son verdict.**
 
 ---
 
@@ -273,34 +284,32 @@ en dry-run (`placeOrder`/`cancelOrder` jettent avant le premier `fetch`).
 
 ### Ce qu'on ne reprend PAS
 
-| Element | Ce qu'on fait |
-|---------|---------------|
-| dryRun=false par defaut | dryRun=true par defaut, confirmation "LIVE" |
-| `execSync` avec shell bash | sandbox bwrap + allowlist + execFile/spawn en array args |
-| Cle Solana en clair en memoire | Zeroing memoire |
-| `skipLibCheck:true` | **false** — à corriger dans `tsconfig.json` (la migration vitest l'a pose `true` par commodite) |
-| 376 `as any` | zero tolerance |
-| SECURITY_AUDIT.md obsolete | pas d'audit affiche sans audit reel |
-| Badges marketing exageres | README sobre |
+| Element | Ce qu'on fait | Statut verifie |
+|---------|---------------|---|
+| dryRun=false par defaut | dryRun=true par defaut, confirmation "LIVE" | ✅ confirme par audit |
+| `execSync` avec shell bash | sandbox bwrap + allowlist + execFile/spawn en array args | ✅ code conforme, ⚠️ sandbox non fonctionnel (PALLAS-M03) |
+| Cle Solana en clair en memoire | Zeroing memoire | ⚠️ partiel seulement (PALLAS-M05) |
+| `skipLibCheck:true` | **false** | ✅ confirme (`tsconfig.json:8`) |
+| 376 `as any` | zero tolerance | ✅ confirme : 0 occurrence dans le code actif |
+| SECURITY_AUDIT.md obsolete | pas d'audit affiche sans audit reel | ✅ `AUDIT-PALLAS-v0.1.md` est un audit reel et daté |
+| Badges marketing exageres | README sobre | ⚠️ pas de README suivi du tout pour l'instant (PALLAS-M06) |
 
 ---
 
-## Estimation
+## Estimation (recalibree post-audit)
 
-| Phase | Duree |
-|-------|-------|
-| 0 — Fondations | 2 sem |
-| 1 — Securite | 1 sem |
-| 2 — Polymarket | 2 sem |
-| 3 — Gateway + Agent | 2 sem |
-| 4 — Skills | 2 sem |
-| 5 — CI/CD + docs | 1 sem |
-| **Total MVP** | **~10 sem** |
+| Phase | Duree initiale | Duree ajoutee (corrections) |
+|-------|-------|---|
+| 0 — Fondations | 2 sem | +3-4j (PALLAS-M01, PALLAS-M04) |
+| 1 — Securite | 1 sem | +2-3j (PALLAS-M03, PALLAS-M05) |
+| 2 — Polymarket | 2 sem | +4-5j (PALLAS-M02 — clôturée 2026-09-09, priorité critique levée) |
+| 3 — Gateway + Agent | 2 sem | inchangee |
+| 4 — Skills | 2 sem | inchangee |
+| 5 — CI/CD + docs | 1 sem | +2j (PALLAS-M06) |
+| **Total MVP** | **~10 sem** | **~11.5-12 sem** |
 
-*Avancement effectif : Phases 0-2 presque terminees — **9 fichiers / 66 tests TS verts** + 37 Rust.
-Phase 2.2 : secrets et signature CLOB faits ; reste wallet Solana + API key live + confirmation schema live.*
+*Publication : projet renomme **Pallas** — depot public **github.com/symbioticode/pallas**,
+scope npm `@pallas/*`, prefixe d'env `PALLAS_*`.*
 
-*Publication (session) : projet renomme **Pallas** — depot public **github.com/symbioticode/pallas**,
-arborescence `~/Projects/80_PALLAS/pallas`, scope npm `@pallas/*`, prefixe d'env `PALLAS_*`.
-Validation apres relocalisation : `cargo clean` obligatoire (artefacts de test compiles avec
-l'ancien chemin absolu), puis npm + cargo re-verts.*
+*Audit de reference : `AUDIT-PALLAS-v0.1.md`, commit `813be02`, 9 septembre 2026. Toute mise a jour
+de ce PLAN.md doit citer la mission (`PALLAS-M0X`) qui justifie le changement de statut d'une case.*

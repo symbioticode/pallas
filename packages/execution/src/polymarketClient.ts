@@ -1,6 +1,11 @@
 import { getIsDryRun } from './dryRun.js';
-import type { OrderParams, OrderStatus, Market } from './types.js';
+import { assertSignatureSchemaValidated, SignatureSchemaNotValidatedError } from './schemaGate.js';
+import { buildL1Headers, buildL2Headers, type ClobApiCredentials } from './clobAuth.js';
+import { privateKeyToAddress, signClobAuth } from './polymarketSigner.js';
 import type { SignedOrderPayload } from './polymarketSigner.js';
+import type { OrderParams, OrderStatus, Market } from './types.js';
+
+export { SignatureSchemaNotValidatedError };
 
 export interface PolymarketClientConfig {
   /** URL de base de l'API CLOB. Par defaut la prod publique. */
@@ -10,17 +15,11 @@ export interface PolymarketClientConfig {
   /** Controle dry-run ; par defaut lit le flag global de @pallas/core. */
   isDryRun?: () => boolean;
   /**
-   * Passe a true UNIQUEMENT apres avoir valide le schema EIP-712 et le format
-   * wire contre l'API CLOB live. Tant que false, placeOrder refuse (fail-closed).
+   * Credentials API + adresse du signataire pour les ECRITURES et endpoints
+   * prives (L2 HMAC, docs getting-started/api). Aucune ecriture n'est possible
+   * sans elles, meme en mode live valide.
    */
-  signedOrdersValidated?: boolean;
-}
-
-export class SignatureSchemaNotValidatedError extends Error {
-  constructor() {
-    super('schema de signature Polymarket non valide en live : ordre refusé (fail-closed)');
-    this.name = 'SignatureSchemaNotValidatedError';
-  }
+  auth?: ClobApiCredentials;
 }
 
 export interface MarketSummary {
@@ -56,6 +55,12 @@ export interface CancelResult {
   orderId: string;
   cancelled: boolean;
   dryRun: boolean;
+}
+
+export interface ApiCreds {
+  apiKey: string;
+  secret: string;
+  passphrase: string;
 }
 
 function boolOf(v: unknown, fallback = true): boolean {
@@ -94,14 +99,14 @@ export class PolymarketClient {
   private readonly baseUrl: string;
   private readonly fetcher: typeof fetch;
   private readonly isDryRunFn: () => boolean;
-  private readonly signedOrdersValidated: boolean;
+  private readonly auth?: ClobApiCredentials;
   private readonly maxRetries: number;
 
   constructor(config: PolymarketClientConfig = {}) {
     this.baseUrl = config.baseUrl ?? 'https://clob.polymarket.com';
     this.fetcher = config.fetcher ?? fetch;
     this.isDryRunFn = config.isDryRun ?? getIsDryRun;
-    this.signedOrdersValidated = config.signedOrdersValidated ?? false;
+    this.auth = config.auth;
     this.maxRetries = 2;
   }
 
@@ -132,6 +137,13 @@ export class PolymarketClient {
     throw new Error(`${label} blocked in dry-run (global dryRun active)`);
   }
 
+  private requireAuth(label: string): ClobApiCredentials {
+    if (!this.auth) {
+      throw new Error(`${label}: credentials API requises (config.auth) en mode live`);
+    }
+    return this.auth;
+  }
+
   /** Liste les marches. Lecture : autorisee en dry-run. */
   async listMarkets(limit = 10): Promise<MarketSummary[]> {
     const data = await this.get<Record<string, unknown>>(`/markets?limit=${limit}&active=true&closed=false`);
@@ -158,24 +170,40 @@ export class PolymarketClient {
   }
 
   /**
-   * Place un ordre. ECRITURE : dry-run par defaut (ne part jamais en dry-run).
-   * En mode live, un payload signe (`buildSignedOrderPayload`) est requis et le
-   * flag `signedOrdersValidated` doit etre a true (fail-closed sinon).
+   * Place un ordre CLOB V2 signe. ECRITURE : dry-run par defaut.
+   * En live : auth (L2) + preuve de validation du schema (`schemaGate`) requis,
+   * sinon fail-closed. Corps conforme aux docs : { deferExec, order, orderType,
+   * owner (apiKey), postOnly? }.
    */
-  async placeOrder(params: OrderParams, signed?: SignedOrderPayload): Promise<OrderResult> {
+  async placeOrder(
+    params: OrderParams,
+    signed: SignedOrderPayload,
+    opts: { postOnly?: boolean } = {},
+  ): Promise<OrderResult> {
     if (this.isDryRunFn()) {
       await this.dryRunBlock('placeOrder');
     }
-    if (!this.signedOrdersValidated || !signed) {
-      throw new SignatureSchemaNotValidatedError();
-    }
+    assertSignatureSchemaValidated();
+    const creds = this.requireAuth('placeOrder');
+
+    const body = JSON.stringify({
+      deferExec: false,
+      order: signed.order,
+      orderType: signed.orderType,
+      owner: creds.apiKey,
+      ...(opts.postOnly ? { postOnly: true } : {}),
+    });
+    const headers = await buildL2Headers(creds, 'POST', '/order', body);
     const res = await this.fetcher(`${this.baseUrl}/order`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(signedOrderWire(signed, params)),
+      headers: { 'content-type': 'application/json', ...headers },
+      body,
       signal: AbortSignal.timeout(10_000),
     });
-    const data = await handleResponse(res) as Record<string, unknown>;
+    const data = (await handleResponse(res)) as Record<string, unknown>;
+    if (data['success'] === false) {
+      throw new Error(`Polymarket placeOrder refuse: ${String(data['errorMsg'] ?? 'unknown')}`);
+    }
     return {
       orderId: String(data['orderID'] ?? data['id'] ?? ''),
       status: (data['status'] as OrderStatus) ?? 'open',
@@ -183,14 +211,17 @@ export class PolymarketClient {
     };
   }
 
-  /** Annule un ordre. ECRITURE : dry-run par defaut. */
+  /** Annule un ordre. ECRITURE : dry-run par defaut ; auth L2 requise en live (pas de gate ordre). */
   async cancelOrder(orderId: string): Promise<CancelResult> {
     if (this.isDryRunFn()) {
       await this.dryRunBlock('cancelOrder');
     }
-    const res = await this.fetcher(`${this.baseUrl}/order/${orderId}`, {
+    const creds = this.requireAuth('cancelOrder');
+    const path = `/order/${orderId}`;
+    const headers = await buildL2Headers(creds, 'DELETE', path);
+    const res = await this.fetcher(`${this.baseUrl}${path}`, {
       method: 'DELETE',
-      headers: { accept: 'application/json' },
+      headers: { accept: 'application/json', ...headers },
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
@@ -198,6 +229,31 @@ export class PolymarketClient {
       throw new Error(`Polymarket cancel HTTP ${res.status}: ${body.slice(0, 200)}`);
     }
     return { orderId, cancelled: true, dryRun: false };
+  }
+
+  /**
+   * Derive les credentials API L2 depuis le wallet (EIP-712 ClobAuth + headers L1).
+   * ECRITURE D'IDENTITE : dry-run par defaut. Ne necessite PAS le gate de schema
+   * d'ordre (pas d'ordre signe ici).
+   */
+  async deriveApiKey(privKey: Uint8Array | string, nonce: bigint | number = 0n): Promise<ApiCreds> {
+    if (this.isDryRunFn()) {
+      await this.dryRunBlock('deriveApiKey');
+    }
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signed = signClobAuth(privateKeyToAddress(privKey), timestamp, nonce, privKey);
+    const headers = buildL1Headers(signed);
+    const res = await this.fetcher(`${this.baseUrl}/auth/derive-api-key`, {
+      method: 'GET',
+      headers: { accept: 'application/json', ...headers },
+      signal: AbortSignal.timeout(10_000),
+    });
+    const data = (await handleResponse(res)) as Record<string, unknown>;
+    return {
+      apiKey: String(data['apiKey'] ?? ''),
+      secret: String(data['secret'] ?? ''),
+      passphrase: String(data['passphrase'] ?? ''),
+    };
   }
 
   private toMarketSummary(raw: unknown): MarketSummary {
@@ -213,17 +269,4 @@ export class PolymarketClient {
       active: m.active,
     };
   }
-}
-
-/** Format wire attendu par l'API CLOB pour un ordre signe (EIP-712). */
-function signedOrderWire(s: SignedOrderPayload, p: OrderParams): Record<string, unknown> {
-  return {
-    order: s.order,
-    signature: s.signature,
-    owner: s.owner,
-    side: s.side,
-    price: s.price,
-    size: s.size,
-    token_id: p.tokenId ?? s.order.tokenId,
-  };
 }
