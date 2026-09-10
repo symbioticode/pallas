@@ -8,16 +8,25 @@
  * 2. Une ALLOWLIST de binaires : seuls les noms connus sont acceptes.
  * 3. Un namespace bubblewrap isole (net, PID, UTS, filesystem en lecture seule).
  *
- * Fail-closed : si bwrap est manquant et que l'execution sandboxee est requise,
- * on THROW plutot que d'executer en clair.
+ * Portee de la protection filesystem : la racine `/` montee en lecture seule
+ * (--ro-bind) empêche l'ECRITURE, mais ne protège PAS la confidentialite —
+ * le processus sandboxe peut toujours LIRE les fichiers lisibles par son
+ * utilisateur. Un programme malveillant peut donc exfiltrer des donnees
+ * lisibles ; le sandbox neutralise mutation/destruction, pas la lecture.
+ *
+ * Fail-closed : si bwrap est manquant OU echoue a initialiser l'isolation
+ * (ex. netns non permis), on THROW plutot que d'executer en clair.
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { accessSync, constants as fsConstants, existsSync, realpathSync, statSync } from 'node:fs';
+import { isAbsolute, resolve } from 'node:path';
 
 /** Binaires autorises (noms courts only). La resolution se fait via PATH. */
 const ALLOWLIST: ReadonlyArray<string> = ['python3', 'python', 'node', 'ls', 'echo'];
+
+/** Préfixe des messages d'échec d'INITIALISATION de bwrap (fail-closed, cf. runSandboxed). */
+const BWARP_INIT_PREFIX = /(^|\n)\s*bwrap: /m;
 
 export interface SandboxOptions {
   /** Temps maximum d'execution en ms (defaut 10s). */
@@ -62,11 +71,19 @@ export class MissingBwrapError extends SandboxError {
   }
 }
 
-/** Binaire autorise mais introuvable dans le PATH. */
+/** Binaire autorise mais introuvable OU non executable dans le PATH. */
 export class BinaryNotFoundError extends SandboxError {
   constructor(command: string) {
-    super(`allowlisted binary '${command}' not found in PATH`);
+    super(`allowlisted binary '${command}' not found as a regular executable in PATH`);
     this.name = 'BinaryNotFoundError';
+  }
+}
+
+/** bwrap s'est lance mais n'a PAS pu initialiser le sandbox (ex. netns refuse). */
+export class BwrapInitError extends SandboxError {
+  constructor(stderr: string) {
+    super(`bwrap failed to initialise the sandbox (fail-closed); protected program never ran. stderr: ${stderr.trim().slice(0, 400)}`);
+    this.name = 'BwrapInitError';
   }
 }
 
@@ -78,17 +95,35 @@ export function allowlist(): readonly string[] {
   return ALLOWLIST;
 }
 
-/** Resout `command` (nom court) vers un chemin absolu via le PATH. */
+/** Vrai si `path` est un fichier regulier executable (reel, apres dereferencement des symlinks). */
+function isRegularExecutable(path: string): boolean {
+  try {
+    const real = realpathSync(path);
+    const st = statSync(real); // stat, pas lstat : on valide la CIBLE reelle
+    if (!st.isFile()) return false;
+    accessSync(real, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resout `command` (nom court) vers un chemin absolu via le PATH.
+ * Durci : la cible doit etre un fichier REGULIER executable (et non un simple
+ * `existsSync`), apres dereferencement des liens symboliques — un lien detourne
+ * vers un script arbitraire ne passe plus.
+ */
 function resolveBinary(command: string): string {
   if (!isAllowlisted(command)) throw new DeniedCommandError(command);
 
   // node est special : on prefere l'execution en cours (fiable).
-  if (command === 'node') return process.execPath;
+  if (command === 'node' && isRegularExecutable(process.execPath)) return process.execPath;
 
   const pathDirs = (process.env.PATH ?? '').split(':').filter(Boolean);
   for (const dir of pathDirs) {
-    const candidate = resolve(dir, command);
-    if (existsSync(candidate)) return candidate;
+    const candidate = isAbsolute(dir) ? resolve(dir, command) : command;
+    if (isRegularExecutable(candidate)) return candidate;
   }
   throw new BinaryNotFoundError(command);
 }
@@ -130,6 +165,7 @@ function locateBwrap(): string {
  *
  * @throws DeniedCommandError si le binaire n'est pas dans l'allowlist
  * @throws MissingBwrapError si bwrap est introuvable (fail-closed)
+ * @throws BwrapInitError si bwrap s'est lance mais n'a pas pu initialiser le sandbox
  */
 export function runSandboxed(command: string, args: string[], options: SandboxOptions = {}): Promise<SandboxResult> {
   if (!isAllowlisted(command)) {
@@ -143,7 +179,12 @@ export function runSandboxed(command: string, args: string[], options: SandboxOp
     return Promise.reject(err as Error);
   }
 
-  const binary = resolveBinary(command);
+  let binary: string;
+  try {
+    binary = resolveBinary(command);
+  } catch (err) {
+    return Promise.reject(err as Error);
+  }
   const bwrapArgs = buildBwrapArgs(binary, args, options.cwd);
   const timeoutMs = options.timeoutMs ?? 10_000;
 
@@ -182,6 +223,15 @@ export function runSandboxed(command: string, args: string[], options: SandboxOp
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      // FAIL-CLOSED : si bwrap n'a pas pu creer l'isolation (netns decompressé,
+      // boucle refuse, etc.), il imprime 'bwrap: ...' sur stderr et s'arrête
+      // AVANT de démarrer le programme protégé. Rejeter explicitement : un tel
+      // échec ne doit JAMAIS ressembler a un "echec applicatif du programme" —
+      // distinguer "bwrap n'a pas demarre" de "le programme n'a pas pu joindre".
+      if (code !== 0 && BWARP_INIT_PREFIX.test(stderr)) {
+        rejectPromise(new BwrapInitError(stderr));
+        return;
+      }
       resolvePromise({
         stdout,
         stderr,

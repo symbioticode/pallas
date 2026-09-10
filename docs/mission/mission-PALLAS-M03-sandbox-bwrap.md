@@ -5,7 +5,7 @@ Mission ID : PALLAS-M03
 Date de création : 2026-09-09
 Auteur / Agent : Claude (planification) — exécution par agent de code au choix
 Projet : Pallas
-Statut : ACTIF
+Statut : **CLÔTURÉE le 2026-09-09** (exécution : opencode/big-pickle — journal : `mission-PALLAS-M03-journal.md`)
 Source de vérité : `AUDIT-PALLAS-v0.1.md` (section 2, "Sandbox bwrap") + `packages/execution/src/sandbox.ts`
 + `packages/execution/src/sandbox.test.ts`
 
@@ -96,15 +96,15 @@ puisse plus jamais donner un faux positif, quel que soit l'hôte.
    important de cette mission (supprimer le faux positif est plus critique que faire passer bwrap).
 
 ## 7. Critères de succès
-- [ ] La cause exacte de l'échec bwrap est diagnostiquée et documentée avec preuve (pas supposée).
-- [ ] Soit : les 7 tests sandbox passent avec une isolation réseau réellement vérifiée ; soit :
+- [x] La cause exacte de l'échec bwrap est diagnostiquée et documentée avec preuve (pas supposée).
+- [x] Soit : les 7 tests sandbox passent avec une isolation réseau réellement vérifiée ; soit :
       la limite d'hôte est documentée ET le sandbox échoue de façon fail-closed explicite (le
       process protégé ne démarre jamais si bwrap ne peut pas s'initialiser correctement).
-- [ ] Le test réseau ne peut plus passer sur un simple échec d'initialisation de bwrap — vérifié par
+- [x] Le test réseau ne peut plus passer sur un simple échec d'initialisation de bwrap — vérifié par
       un test négatif qui simule cet échec et confirme que le test le détecte.
-- [ ] `resolveBinary` vérifie que la cible est un fichier régulier exécutable, pas seulement
+- [x] `resolveBinary` vérifie que la cible est un fichier régulier exécutable, pas seulement
       `existsSync`.
-- [ ] La portée réelle de la protection filesystem (lecture seule ≠ confidentialité) est documentée.
+- [x] La portée réelle de la protection filesystem (lecture seule ≠ confidentialité) est documentée.
 
 ## 8. Interdictions
 - Ne pas modifier le test réseau pour le faire passer sans avoir réglé la confusion

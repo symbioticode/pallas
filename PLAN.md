@@ -15,7 +15,7 @@
 > |---|---|---|
 > | `PALLAS-M01` | Risk engine — validation stricte + état réel transmis | 🔴 Critique → ✅ clôturée 2026-09-09 |
 > | `PALLAS-M02` | Signature Polymarket EIP-712 — correction et validation officielle | 🔴 Critique → ✅ clôturée 2026-09-09 |
-> | `PALLAS-M03` | Sandbox bwrap — fix opérationnel + suppression du faux positif réseau | 🟠 Haute |
+> | `PALLAS-M03` | Sandbox bwrap — fix opérationnel + suppression du faux positif réseau | 🟠 Haute → ✅ clôturée 2026-09-09 |
 > | `PALLAS-M04` | Frontières TS/HTTP — validation runtime stricte, retry, idempotence | 🟠 Haute |
 > | `PALLAS-M05` | Credentials & mémoire — honnêteté du zeroing, fermeture des fuites en clair | 🟡 Moyenne |
 > | `PALLAS-M06` | CI/CD + documentation sobre | 🟡 Moyenne |
@@ -183,14 +183,28 @@ Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a tr
   des gardes globales pour tout appelant interne. A restreindre en usage production.
   (`signedOrdersValidated` supprime — voir PALLAS-M02.)
 
-### 1.3 Shell execution — sandboxing implemente mais NON FONCTIONNEL sur l'hote teste
+### 1.3 Shell execution — sandboxing verifie (PALLAS-M03 cloturee le 2026-09-09)
 - [x] Sandbox **bubblewrap (bwrap)** codee : allowlist, pas de bash/sh, `spawn` array args
-- [ ] **Isolation reseau verifiee par test — FAUX. `bwrap` echoue systematiquement
-      (`NETLINK_ROUTE socket: Operation not permitted`) ; le test reseau verifie seulement un code
-      de sortie non nul, qui est vrai que le sandbox ait fonctionne ou non — faux positif de
-      securite. Voir PALLAS-M03.**
-- Tests : 5/7 verts, 2 rouges (execution reelle et stdin echouent car bwrap ne demarre jamais le
-  programme protege)
+- [x] **Isolation reseau verifiee par test — PREUVE REELLE, plus aucun faux positif.**
+      Le test demarre un serveur HTTP sur la boucle locale du HOST et verifie que le processus
+      sandboxe ne peut PAS le joindre (0 requete recue, echec URLError explicite). Le precedent
+      `exitCode !== 0` — vrai aussi quand bwrap ne demarre jamais le programme — est remplace par :
+      tout `bwrap: ...` dans stderr = echec d'INITIALISATION ⇒ `runSandboxed` REJETTE
+      (`BwrapInitError`, fail-closed), jamais pris pour une isolation. Test negatif dedie simule
+      l'hote de l'audit (`Failed to create NETLINK_ROUTE socket`) et verifie le rejet.
+- [x] **Diagnostic hote (prouve, pas suppose)** : sur l'hote actuel (kernel 6.18.44, bwrap 0.11.2,
+      `sysctl kernel.unprivileged_userns_clone` absente mais user namespaces actifs —
+      `/proc/sys/user/max_user_namespaces=62197`, CapEff vides, CapBnd pleins), `bwrap
+      --unshare-net --unshare-pid --unshare-uts --ro-bind / / python3 -c 'print(6*7)'` → `42`, exit 0 ;
+      netns = boucle isolée (`socket.if_nameindex() == [(1,'lo')]`). L'echec `NETLINK_ROUTE EPERM`
+      de l'hote de l'audit vient de la conf userns/niveau capacites de CETTE machine la ; c'est une
+      contrainte d'hote desormais CI-blocs dans l'autre sens : bwrap non initialise ⇒ throw, jamais
+      execution en clair. Le test reseau echoue legerement si l'hote ne fournit ni netns ni python3.
+- [x] `resolveBinary` durci : cible = fichier REGULIER executable (realpath + stat isFile + X_OK),
+      pas seulement `existsSync` ; un dossier ou un lien detourne est rejete (test dedie).
+- [x] Portee filesystem documentee (code + `docs/SECURITY.md`) : `--ro-bind / /` protege l'ECRITURE,
+      PAS la confidentialite — le processus sandboxe peut lire ce que son utilisateur peut lire.
+- Tests sandbox : **9/9 verts**. Suite TS : **84/84** (9 fichiers).
 
 ### 1.4 Input sanitizer (FAIT, mais isole)
 - [x] Copie du sanitizer CloddsBot (homoglyphes, zero-width, prompt injection)
@@ -287,7 +301,7 @@ Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a tr
 | Element | Ce qu'on fait | Statut verifie |
 |---------|---------------|---|
 | dryRun=false par defaut | dryRun=true par defaut, confirmation "LIVE" | ✅ confirme par audit |
-| `execSync` avec shell bash | sandbox bwrap + allowlist + execFile/spawn en array args | ✅ code conforme, ⚠️ sandbox non fonctionnel (PALLAS-M03) |
+| `execSync` avec shell bash | sandbox bwrap + allowlist + execFile/spawn en array args | ✅ code conforme + isolation reseau verifiee par preuve reelle, fail-closed (PALLAS-M03) |
 | Cle Solana en clair en memoire | Zeroing memoire | ⚠️ partiel seulement (PALLAS-M05) |
 | `skipLibCheck:true` | **false** | ✅ confirme (`tsconfig.json:8`) |
 | 376 `as any` | zero tolerance | ✅ confirme : 0 occurrence dans le code actif |
