@@ -14,7 +14,9 @@ appliquées depuis dans les missions `PALLAS-M01`…`M06`).
   validée en entrée/sortie par schémas Zod côté TS.
 - **Exécution Polymarket** (`packages/execution`) : client CLOB HTTP natif (listMarkets,
   getOrderbook, placeOrder, cancelOrder, derive API key), signature EIP-712 V2 vérifiée contre
-  vecteurs viem, sandbox bwrap pour les exécutions shell (isolation réseau prouvée).
+  vecteurs viem, sandbox bwrap pour les exécutions shell (isolation réseau **prouvée sur l'hôte
+  de dev** — skip explicite ailleurs quand bwrap ne peut pas initialiser l'unshare, cf.
+  `docs/mission/mission-PALLAS-M07-journal.md`).
 - **Sécurité** : dry-run par défaut (désactivation = confirmation "LIVE" explicite), secrets
   chiffrés AES-256-GCM, zéro `as any`, sandbox, gating de schéma de signature (fail-closed).
 
