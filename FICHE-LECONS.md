@@ -52,7 +52,7 @@ Charger les skills à la demande pour qu'une dépendance manquante ne fasse pas 
 
 **L'erreur ici :** clé de chiffrement = une variable d'environnement, warning silencieux si absente. Clé privée Solana en clair en mémoire sans zeroing.
 
-**La bonne version :** fail-closed (crash si clé absente) + secret manager plutôt qu'une env var brute + zeroing mémoire après usage.
+**La bonne version :** fail-closed (crash si clé absente) + secret manager plutôt qu'une env var brute + zeroing des buffers dérivés (`.fill(0)`) — sachant que le zeroing complet de `string` JS est impossible : le risque résiduel (secrets en clair dans le heap tant que le process tourne) doit être documenté, pas nié (PALLAS-M05).
 
 ### 8. Sandboxing de l'exécution shell/Python
 

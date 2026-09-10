@@ -1,6 +1,7 @@
 # Sécurité — Pallas
 
-Statut : document amorcé par PALLAS-M03 (2026-09-09). À compléter par PALLAS-M06 (CI + doc sobre).
+Statut : document amorcé par PALLAS-M03 (2026-09-09), complété mémoire par PALLAS-M05
+(2026-09-09). À compléter par PALLAS-M06 (CI + doc sobre).
 
 ## Sandbox bwrap (phase 1.3) — portée réelle de la protection
 
@@ -30,3 +31,31 @@ implicitement permis (stdout/stderr renvoyés à l'appelant).
 
 - CI non câblée (`npm test`/typecheck/cargo ne tournent pas en pipeline).
 - Composants de sécurité non engagés (packages/agent absent).
+
+## Credentials en mémoire — garanties réelles (PALLAS-M05)
+
+**Ce qui est effacé (`.fill(0)` quand la donnée vit dans un Buffer dont on détient la copie) :**
+
+- copies Buffer des clés privées dans le signer (`package:execution → polymarketSigner.ts`) :
+  `signOrder`, `signClobAuth`, `signEip191`, `privateKeyToAddress` — toutes passent par
+  `toKeyBuffer()` (copie de 32 octets) libérée dans un `try/finally` ;
+- clé dérivée scrypt et buffer déchiffré temporaire (`packages/core/src/credentials.ts`).
+
+**Ce qui ne peut PAS être effacé en JavaScript/TypeScript pur :**
+
+- toute clé **string** : passphrase de dérivation, secrets hex/clair transmis en `string`,
+  et tout ce qui est sorti de `JSON.parse` (`decryptObject`, `loadPolymarketSecrets`).
+
+**Risque résiduel (assumée, documenté — pas masqué) :**
+
+> Les secrets décryptés existent en clair sous forme de string JS tant que le process tourne ;
+> en cas de compromission du process (heap dump), ils sont récupérables.
+
+Le zeroing dont pouvons disposer réduit la surface (copies de travail transitoires),
+il ne la supprime pas : l'effort de sécurité porte sur le stockage au repos (chiffré,
+fail-closed) et la réduction du temps de vie des copies Buffer.
+
+**Piste future (non implémentée, budget non engagé) :** `sodium-native`/`libsodium` ou
+mémoire native verrouillée (`mlock`) permettrait un vrai zeroing + swap protection pour les
+clés — à réserver aux clés privées et à sécuriser par une preuve de mise en œuvre (n'ajouter
+aucune dépendance native au build NixOS sans cette preuve).

@@ -18,6 +18,10 @@
  * constructeur ne permet de contourner cette preuve (PALLAS-M02, constat 5).
  *
  * Crypto 100% pure JS (@noble) : secp256k1 (RFC6979), keccak256.
+ *
+ * MEMOIRE (PALLAS-M05) : chaque fonction qui recoit une cle privee travaille sur
+ * une COPIE Buffer dediee, zeroee (`.fill(0)`) dans un `finally` apres usage. Les
+ * strings sources (hex) restent non-effaçables en JS pur — voir docs/SECURITY.md.
  */
 
 import { secp256k1 } from '@noble/curves/secp256k1';
@@ -246,13 +250,37 @@ export function orderDigest(order: OrderToSign, domain = POLYMARKET_DOMAIN): Uin
   return keccak(new Uint8Array([0x19, 0x01]), domainSeparator(domain), orderStructHash(order));
 }
 
+// ------------------ cles privees : copies Buffer effacees (PALLAS-M05) ------------------
+
+/**
+ * Copie de travail d'une cle privee (hex string ou bytes) dans un Buffer de 32
+ * octets. Toujours `Buffer.from` : on ne zero JAMais la memoire de l'appelant,
+ * seulement notre copie (vie dans un `try/finally` + `fill(0)` au niveau appelant).
+ * Les STRING sources demeurent non-effaçables en JS pur (docs/SECURITY.md).
+ */
+function toKeyBuffer(privKey: Uint8Array | string): Buffer {
+  const buf =
+    typeof privKey === 'string'
+      ? Buffer.from(privKey.replace(/^0x/i, ''), 'hex')
+      : Buffer.from(privKey);
+  if (buf.length !== 32) {
+    buf.fill(0);
+    throw new Error('cle privee invalide : doit faire 32 octets');
+  }
+  return buf;
+}
+
 /** Dérive l'adresse Ethereum depuis une clé privée (hex ou Uint8Array). */
 export function privateKeyToAddress(privKey: Uint8Array | string): string {
-  const pk = typeof privKey === 'string' ? Buffer.from(privKey.replace(/^0x/i, ''), 'hex') : privKey;
-  const pub = secp256k1.getPublicKey(pk, false); // 65 octets [0x04, x, y]
-  const hash = keccak_256(pub.slice(1));
-  const addr = hash.slice(-20);
-  return '0x' + Buffer.from(addr).toString('hex');
+  const pk = toKeyBuffer(privKey);
+  try {
+    const pub = secp256k1.getPublicKey(pk, false); // 65 octets [0x04, x, y]
+    const hash = keccak_256(pub.slice(1));
+    const addr = hash.slice(-20);
+    return '0x' + Buffer.from(addr).toString('hex');
+  } finally {
+    pk.fill(0);
+  }
 }
 
 /**
@@ -260,17 +288,22 @@ export function privateKeyToAddress(privKey: Uint8Array | string): string {
  */
 export function signOrder(order: OrderToSign, privKey: Uint8Array | string, domain = POLYMARKET_DOMAIN): SignedOrder {
   const digest = orderDigest(order, domain);
-  const sig = secp256k1.sign(digest, typeof privKey === 'string' ? Buffer.from(privKey.replace(/^0x/i, ''), 'hex') : privKey);
-  const compact = sig.toCompactRawBytes(); // r||s (64)
-  const recovery = sig.recovery;
-  if (recovery === undefined) throw new Error('signature sans recovery bit');
-  const signature = Buffer.concat([Buffer.from(compact), Buffer.from([27 + recovery])]).toString('hex');
-  return {
-    signature,
-    recoveryParam: recovery,
-    digest: Buffer.from(digest).toString('hex'),
-    signer: privateKeyToAddress(privKey),
-  };
+  const pk = toKeyBuffer(privKey);
+  try {
+    const sig = secp256k1.sign(digest, pk);
+    const compact = sig.toCompactRawBytes(); // r||s (64)
+    const recovery = sig.recovery;
+    if (recovery === undefined) throw new Error('signature sans recovery bit');
+    const signature = Buffer.concat([Buffer.from(compact), Buffer.from([27 + recovery])]).toString('hex');
+    return {
+      signature,
+      recoveryParam: recovery,
+      digest: Buffer.from(digest).toString('hex'),
+      signer: privateKeyToAddress(privKey),
+    };
+  } finally {
+    pk.fill(0);
+  }
 }
 
 /** Récupère l'adresse du signataire depuis un digest + signature (65 octets r||s||v). */
@@ -294,11 +327,15 @@ export function recoverSignerAddress(digest: Uint8Array | string, signatureHex: 
 export function signEip191(message: string, privKey: Uint8Array | string): string {
   const prefix = utf8(`\u0019Ethereum Signed Message:\n${message.length}`);
   const digest = keccak(prefix, utf8(message));
-  const pk = typeof privKey === 'string' ? Buffer.from(privKey.replace(/^0x/i, ''), 'hex') : privKey;
-  const sig = secp256k1.sign(digest, pk);
-  const recovery = sig.recovery;
-  if (recovery === undefined) throw new Error('signature sans recovery bit');
-  return Buffer.concat([Buffer.from(sig.toCompactRawBytes()), Buffer.from([27 + recovery])]).toString('hex');
+  const pk = toKeyBuffer(privKey);
+  try {
+    const sig = secp256k1.sign(digest, pk);
+    const recovery = sig.recovery;
+    if (recovery === undefined) throw new Error('signature sans recovery bit');
+    return Buffer.concat([Buffer.from(sig.toCompactRawBytes()), Buffer.from([27 + recovery])]).toString('hex');
+  } finally {
+    pk.fill(0);
+  }
 }
 
 // ------------------ credentials L1 (EIP-712 ClobAuth) ------------------
@@ -348,16 +385,20 @@ export function signClobAuth(
   const ts = timestampSeconds.toString();
   const n = BigInt(nonce);
   const digest = clobAuthDigest({ address, timestamp: ts, nonce: n });
-  const pk = typeof privKey === 'string' ? Buffer.from(privKey.replace(/^0x/i, ''), 'hex') : privKey;
-  const sig = secp256k1.sign(digest, pk);
-  const recovery = sig.recovery;
-  if (recovery === undefined) throw new Error('signature sans recovery bit');
-  return {
-    address,
-    nonce: n.toString(),
-    timestamp: ts,
-    signature: `0x${Buffer.concat([Buffer.from(sig.toCompactRawBytes()), Buffer.from([27 + recovery])]).toString('hex')}`,
-  };
+  const pk = toKeyBuffer(privKey);
+  try {
+    const sig = secp256k1.sign(digest, pk);
+    const recovery = sig.recovery;
+    if (recovery === undefined) throw new Error('signature sans recovery bit');
+    return {
+      address,
+      nonce: n.toString(),
+      timestamp: ts,
+      signature: `0x${Buffer.concat([Buffer.from(sig.toCompactRawBytes()), Buffer.from([27 + recovery])]).toString('hex')}`,
+    };
+  } finally {
+    pk.fill(0);
+  }
 }
 
 // ------------------ ordre CLOB signe ------------------

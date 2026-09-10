@@ -5,7 +5,7 @@ Mission ID : PALLAS-M05
 Date de création : 2026-09-09
 Auteur / Agent : Claude (planification) — exécution par agent de code au choix
 Projet : Pallas
-Statut : ACTIF
+Statut : **CLÔTURÉE le 2026-09-09** (exécution : opencode/big-pickle — journal : `mission-PALLAS-M05-journal.md`)
 Source de vérité : `AUDIT-PALLAS-v0.1.md` (section "Credentials : chiffrement oui, zeroing non") +
 `packages/core/src/credentials.ts` + `packages/execution/src/polymarketSecrets.ts` +
 `packages/execution/src/polymarketSigner.ts`
@@ -88,12 +88,12 @@ description honnête et précise des garanties réelles.
 3. Documenter honnêtement le risque résiduel plutôt que de le masquer.
 
 ## 7. Critères de succès
-- [ ] Tous les `Buffer` contenant une clé privée dans `polymarketSigner.ts` sont effacés après
+- [x] Tous les `Buffer` contenant une clé privée dans `polymarketSigner.ts` sont effacés après
       usage (vérifié par lecture de code + test si possible).
-- [ ] `PLAN.md` ne contient plus l'affirmation non qualifiée "zeroing mémoire" — remplacée par une
+- [x] `PLAN.md` ne contient plus l'affirmation non qualifiée "zeroing mémoire" — remplacée par une
       description précise (ce qui est effacé, ce qui ne peut pas l'être, pourquoi).
-- [ ] Aucune régression sur `npm test`.
-- [ ] Une note explicite existe (code ou doc) sur le risque résiduel : "les secrets décryptés
+- [x] Aucune régression sur `npm test`.
+- [x] Une note explicite existe (code ou doc) sur le risque résiduel : "les secrets décryptés
       existent en clair sous forme de string JS tant que le process tourne ; en cas de compromission
       du process (heap dump), ils sont récupérables."
 

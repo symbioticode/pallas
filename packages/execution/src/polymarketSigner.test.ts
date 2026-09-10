@@ -18,6 +18,7 @@ import {
   recoverSignerAddress,
   randomSalt,
   signClobAuth,
+  signEip191,
   signOrder,
 } from './polymarketSigner.js';
 import type { OrderToSign } from './polymarketSigner.js';
@@ -384,4 +385,43 @@ test('la structure Order V2 ne contient plus taker/nonce/feeRateBps/expiration',
     'side', 'signatureType', 'timestamp', 'metadata', 'builder',
   ]);
   expect(orderStructHash(fixedOrder())).toBeDefined();
+});
+
+// ------------------ PALLAS-M05 : zeroing des buffers de cle privee ------------------
+// Preuve : le signer travaille sur une COPIE interne zeroee — jamais sur la memoire
+// de l'appelant (Buffer/Uint8Array du caller intacts apres appel) — et ses vecteurs
+// de reference restent identiques (determinisme non regresse).
+
+test('signOrder : copie interne zeroee, buffer du caller intact, signature identique (PALLAS-M05)', () => {
+  const callerBuf = Buffer.from(PK_ONE, 'hex');
+  const viaBuffer = signOrder(fixedOrder(), callerBuf);
+  expect(callerBuf.toString('hex')).toBe(PK_ONE); // on n'a pas zeroe la memoire du caller
+  const viaString = signOrder(fixedOrder(), PK_ONE);
+  expect(viaBuffer.signature).toBe(viaString.signature); // determinisme preservé
+  expect(viaBuffer.signer.toLowerCase()).toBe(ADDR_PK_ONE.toLowerCase());
+});
+
+test('privateKeyToAddress : Uint8Array du caller intact apres usage (PALLAS-M05)', () => {
+  const caller = Uint8Array.from(Buffer.from(PK_ONE, 'hex'));
+  const addr = privateKeyToAddress(caller);
+  expect(addr.toLowerCase()).toBe(ADDR_PK_ONE.toLowerCase());
+  expect(Buffer.from(caller).toString('hex')).toBe(PK_ONE);
+});
+
+test('signClobAuth + signEip191 : Buffer du caller intact, signatures valides (PALLAS-M05)', () => {
+  const buf = Buffer.from(PK_ONE, 'hex');
+  const c = signClobAuth(MAKER, 1786000000, 0, buf);
+  expect(buf.toString('hex')).toBe(PK_ONE);
+  expect(c.signature).toMatch(/^0x[0-9a-f]{130}$/);
+  const e = signEip191('hello', buf);
+  expect(buf.toString('hex')).toBe(PK_ONE);
+  expect(e).toMatch(/^[0-9a-f]{130}$/);
+  // signature EIP-191 recuperable vers la bonne adresse.
+  const recovered = recoverSignerAddress(keccak_256(Buffer.concat([Buffer.from('\u0019Ethereum Signed Message:\n5'), Buffer.from('hello')])), e);
+  expect(recovered.toLowerCase()).toBe(ADDR_PK_ONE.toLowerCase());
+});
+
+test('cle privee de taille invalide => erreur claire, aucune signature rendue (PALLAS-M05)', () => {
+  expect(() => signOrder(fixedOrder(), '01')).toThrow(/doit faire 32 octets/);
+  expect(() => privateKeyToAddress(Uint8Array.from([1, 2, 3]))).toThrow(/doit faire 32 octets/);
 });

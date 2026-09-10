@@ -3,11 +3,13 @@
  *
  * Trois elements sensibles sont geres :
  *   - apiKey / apiSecret   : credentials API CLOB (derives en clé de signature)
- *   - walletPrivateKey     : clé privée du wallet Solana (signature CLOB)
+ *   - walletPrivateKey     : clé privée du wallet Ethereum/Polygon (secp256k1, signature CLOB)
  *
- * Aucun secret ne sort en clair : encrypt -> vault chiffré v2 (AES-256-GCM),
- * decrypt -> objet temporaire. La passphrase vient de la config
- * (PALLAS_CREDENTIAL_KEY). Cle absente => MissingCredentialKeyError (fail-closed).
+ * Le vault est chiffré au repos (AES-256-GCM, fail-closed). Au decrypt, les secrets
+ * SORTENT EN CLAIR dans un objet JS : ce sont des string non-effaçables, vivantes
+ * aussi longtemps que l'objet — en cas de heap dump du process compromis, ils sont
+ * recuperables. Aucun zeroing complet possible en JS pur (voir docs/SECURITY.md,
+ * PALLAS-M05). Cle absente => MissingCredentialKeyError (fail-closed).
  */
 
 import {

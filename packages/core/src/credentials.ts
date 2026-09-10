@@ -7,7 +7,9 @@
  *  - CloddsBot: clearance v1 (aes-256-cbc) supportee => migration jamais terminee.
  *    Ici : un seul format v2, pas de legacy.
  *  - CloddsBot: cle privée lue et jamais zeroée en memoire.
- *    Ici : zeroing memoire apres usage (Buffer.fill(0)).
+ *    Ici : la cle derivee (Buffer) et le buffer dechiffre temporaire sont zeroes
+ *    (`.fill(0)`). La passphrase et le plaintext restent des `string` JS
+ *    NON-effaçables — voir docs/SECURITY.md (PALLAS-M05) pour le risque residuel.
  */
 
 import * as crypto from 'node:crypto';
@@ -20,7 +22,7 @@ const IV_LEN = 12;
 
 /** Clé de chiffrement passée de facon explicite (injectée), pas lue en globale. */
 export interface CredentialKey {
-  /** 32 octets utilisés pour scrypt (caller responsable du zeroing). */
+  /** Passphrase de derivation (string JS, NON-effaçable). La cle derivee est zeroee. */
   derivationPassphrase: string;
 }
 

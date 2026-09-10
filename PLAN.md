@@ -165,12 +165,14 @@ Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a tr
 
 ## Phase 1 — Securite fondamentale (S2-S3)
 
-### 1.1 Credentials — fail-closed (FAIT pour le stockage, PARTIEL pour la memoire)
+### 1.1 Credentials — fail-closed (FAIT stockage + memoire effectuee la ou c'est possible — PALLAS-M05 cloturee le 2026-09-09)
 - [x] AES-256-GCM + scrypt, fail-closed (throw si cle absente)
-- [~] Zeroing memoire — **REEL uniquement pour la cle derivee et le buffer dechiffre temporaire.
-      La passphrase (`string`) et les secrets post-`JSON.parse` (`decryptObject`, `loadPolymarketSecrets`)
-      restent en clair en memoire durablement, sans zeroing possible sur des `string` JS — voir
-      PALLAS-M05.**
+- [x] Zeroing — **honnete et precis : efface les COPIES Buffer (`toKeyBuffer` + `fill(0)`, try/finally)
+      des cles privees dans le signer (`signOrder`, `signClobAuth`, `signEip191`,
+      `privateKeyToAddress` — PALLAS-M05), la cle derivee et le buffer dechiffre temporaire
+      (`credentials.ts`). NON-effaçable en JS pur : passphrase, secrets post-`JSON.parse`
+      (`decryptObject`, `loadPolymarketSecrets`) et strings sources restent en clair — risque
+      residuel documente dans `docs/SECURITY.md` (heap dump).**
 - [x] Pas de legacy v1
 - [x] Tests : roundtrip, wrong key, tamper, missing key
 
@@ -236,8 +238,10 @@ Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a tr
 
 ### 2.2 Credentials Polymarket
 - [x] Stockage chiffre via `polymarketSecrets` (AES-256-GCM, fail-closed) — 8 tests
-- [ ] Wallet Solana — **non implemente. Le code mentionne meme "wallet Solana" alors que le signer
-      actuel utilise secp256k1/Ethereum (`polymarketSecrets.ts:4-7`) — incoherence a corriger.**
+- [x] **Wallet — coherence corrigee (PALLAS-M05) : le signer utilise secp256k1/**Ethereum**
+      (Polygon), et non Solana — l'ancien commentaire "wallet Solana" de
+      `polymarketSecrets.ts` (legacy CloddsBot) est corrige. Memoire : les copies Buffer
+      des cles privees sont zeroees apres usage (voir §1.1).**
 - [x] API key Polymarket live — stockage + **auth réelle câblée** : L2 HMAC (placeOrder/cancelOrder)
       + L1 EIP-712 ClobAuth (deriveApiKey), testées via mock serveur — voir PALLAS-M02
 - [x] **Signature CLOB des ordres — clôturée PALLAS-M02 (2026-09-09)** : schéma réécrit en V2
@@ -309,7 +313,7 @@ Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a tr
 |---------|---------------|---|
 | dryRun=false par defaut | dryRun=true par defaut, confirmation "LIVE" | ✅ confirme par audit |
 | `execSync` avec shell bash | sandbox bwrap + allowlist + execFile/spawn en array args | ✅ code conforme + isolation reseau verifiee par preuve reelle, fail-closed (PALLAS-M03) |
-| Cle Solana en clair en memoire | Zeroing memoire | ⚠️ partiel seulement (PALLAS-M05) |
+| Cle Solana en clair en memoire | Zeroing memoire | `~` affinage PALLAS-M05 : copies Buffer des cles zeroees (`toKeyBuffer`+`fill(0)`) ; strings JS non-effaçables, risque residuel documente (`docs/SECURITY.md`) |
 | `skipLibCheck:true` | **false** | ✅ confirme (`tsconfig.json:8`) |
 | 376 `as any` | zero tolerance | ✅ confirme : 0 occurrence dans le code actif |
 | SECURITY_AUDIT.md obsolete | pas d'audit affiche sans audit reel | ✅ `AUDIT-PALLAS-v0.1.md` est un audit reel et daté |
