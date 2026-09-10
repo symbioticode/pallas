@@ -10,7 +10,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { accessSync, constants as fsConstants, realpathSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import type {
@@ -66,14 +66,34 @@ function candidatePaths(): string[] {
   return dirs;
 }
 
+/**
+ * Même vérification que `packages/execution/src/sandbox.ts::isRegularExecutable`
+ * (PALLAS-M10, durcissement `PALLAS_RISK_BIN`) : fichier REGULIER executable,
+ * après résolution des liens symboliques. Duplication VOLONTAIRE (5 lignes) :
+ * `@pallas/risk` ne dépend pas de `@pallas/execution` (qui charge zod+noble) —
+ * mieux vaut cette copie commentée qu'une dépendance transverse. A garder
+ * synchrone avec sandbox.ts.
+ */
+function isRegularExecutable(path: string): boolean {
+  try {
+    const real = realpathSync(path);
+    const st = statSync(real); // stat, pas lstat : on valide la CIBLE reelle
+    if (!st.isFile()) return false;
+    accessSync(real, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function locateBinary(): string {
   const envBin = process.env.PALLAS_RISK_BIN;
   if (envBin) {
-    if (existsSync(envBin)) return envBin;
+    if (isRegularExecutable(envBin)) return envBin;
     throw new MissingBinaryError(envBin);
   }
   for (const p of candidatePaths()) {
-    if (existsSync(p)) return p;
+    if (isRegularExecutable(p)) return p;
   }
   const first = candidatePaths().find((p) => p.includes('release')) ?? 'risk-engine';
   throw new MissingBinaryError(first);

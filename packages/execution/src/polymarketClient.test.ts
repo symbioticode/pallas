@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { PolymarketClient, AmbiguousOrderError, ClobValidationError, SignatureSchemaNotValidatedError } from './polymarketClient.js';
+import { PolymarketClient, AmbiguousOrderError, ClobValidationError, OrderMismatchError, SignatureSchemaNotValidatedError } from './polymarketClient.js';
 import {
   __setSignatureSchemaValidatedForTests as setSchemaValidated,
 } from './schemaGate.js';
@@ -243,7 +243,7 @@ describe('PolymarketClient writes — live valide', () => {
     const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) => jsonResponse({ orderID: 'order-42', status: 'open' }));
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
     const res = await c.placeOrder(
-      { marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY', tokenId: 'tok-yes' },
+      { marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, // tokenId coherent avec le signe
       signedBuy(),
     );
 
@@ -367,5 +367,49 @@ describe('PolymarketClient writes — live valide', () => {
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
     await expect(c.cancelOrder('order-42')).rejects.toThrow(/404/);
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PALLAS-M10 — frontières résiduelles', () => {
+  beforeEach(() => setSchemaValidated(true));
+  afterEach(() => setSchemaValidated(false));
+
+  it('M10: placeOrder rejette si le prix signe diverge de params (OrderMismatchError, AUCUN appel reseau)', async () => {
+    const fetcher = vi.fn();
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    // signed pour price 0.5 / size 10 ; params declare price 0.9 => maker USD 5M vs 9M
+    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.9, size: 10, side: 'BUY' }, signedBuy(5n)))
+      .rejects.toBeInstanceOf(OrderMismatchError);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('M10: placeOrder rejette si la side signee diverge de params', async () => {
+    const fetcher = vi.fn();
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'SELL' }, signedBuy(6n)))
+      .rejects.toBeInstanceOf(OrderMismatchError);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('M10: placeOrder accepte quand params == signe (tokenId explicite coherent)', async () => {
+    const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) => jsonResponse({ orderID: 'order-m10', status: 'open' }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    const res = await c.placeOrder(
+      { marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' },
+      signedBuy(7n),
+    );
+    expect(res.orderId).toBe('order-m10');
+  });
+
+  it('M10: deriveApiKey HTTP 401 => erreur HTTP explicite, pas de parsing JSON confus', async () => {
+    const fetcher = vi.fn(async () => new Response('{"error":"unauthorized"}', { status: 401 }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher: fetcher as unknown as typeof fetch, isDryRun: () => false });
+    await expect(c.deriveApiKey(PK_ONE, 7n)).rejects.toThrow(/401/);
+  });
+
+  it('M10: deriveApiKey HTTP 500 => erreur HTTP explicite', async () => {
+    const fetcher = vi.fn(async () => new Response('boom', { status: 500 }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher: fetcher as unknown as typeof fetch, isDryRun: () => false });
+    await expect(c.deriveApiKey(PK_ONE, 8n)).rejects.toThrow(/500/);
   });
 });

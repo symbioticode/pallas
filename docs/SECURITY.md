@@ -54,8 +54,19 @@ implicitement permis (stdout/stderr renvoyés à l'appelant).
   un 5xx laisse l'ordre dans un état indéterminé (`AmbiguousOrderError`) — réconciliation à
   la main (voir `docs/TRADING.md`), pas de retry auto.
 - **`isDryRun` injectable** au constructeur de `PolymarketClient` (utile aux tests) : c'est une
-  porte de contournement pour tout appelant interne — à restreindre quand un vrai runtime
-  existera (packages/agent, voir `PLAN.md` §1.2 réserve auditiée).
+  porte de contournement pour tout appelant interne. **PALLAS-M10 (décision actée) : réserve
+  documentée, injection RESTÉE intentionnellement limitée** — `isDryRun` lit par défaut le flag
+  global de `@pallas/core` ; le champ d'option est hors index public et la politique d'assemblage
+  du runtime final (packages/agent/gateway, « Phase 3 » du `PLAN.md`) devra INTERDIRE cette
+  injection hors tests. Restriction d'API différée jusqu'à l'assemblage (rien ne consomme encore
+  `PolymarketClient` en prod).
+- **`placeOrder` cross-check params↔signé** (PALLAS-M10) : le payload signé doit correspondre à
+  l'intention déclarée (`side`, `tokenId`, montants à 1 unité 1e-6 près) avant tout appel réseau —
+  sinon `OrderMismatchError`.
+- **`PALLAS_RISK_BIN`** (PALLAS-M10) : variable d'env vérifiée par `isRegularExecutable` (fichier
+  régulier + bit x, après résolution des symlinks, — mêmes règles que bwrap résolu par la sandbox)
+  avant tout `spawn`. Un dossier ou un symlink vers un fichier non exécutable est rejeté
+  (`MissingBinaryError`).
 - **packages/agent, gateway, ledger, skills** : absents — le code de sécurité qui les
   concerne (sanitizer câblé, ledger, auth de la gateway) n'est donc pas encore actif.
 - **CI** (PALLAS-M06 + annexe de vérification réelle, 2026-09-10) : les deux premiers pushs sur

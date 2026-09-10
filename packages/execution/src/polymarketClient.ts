@@ -1,7 +1,7 @@
 import { getIsDryRun } from './dryRun.js';
 import { assertSignatureSchemaValidated, SignatureSchemaNotValidatedError } from './schemaGate.js';
 import { buildL1Headers, buildL2Headers, type ClobApiCredentials } from './clobAuth.js';
-import { privateKeyToAddress, signClobAuth } from './polymarketSigner.js';
+import { privateKeyToAddress, signClobAuth, calculateOrderAmounts } from './polymarketSigner.js';
 import type { SignedOrderPayload } from './polymarketSigner.js';
 import type { OrderParams, OrderStatus, Market } from './types.js';
 import {
@@ -20,7 +20,14 @@ export interface PolymarketClientConfig {
   baseUrl?: string;
   /** Deleguee pour les opens HTTP (injectable pour les tests). */
   fetcher?: typeof fetch;
-  /** Controle dry-run ; par defaut lit le flag global de @pallas/core. */
+  /**
+   * Controle dry-run ; par defaut lit le flag global de @pallas/core.
+   * PALLAS-M10 (decision, reserve devient explicite) : cette injection est
+   * RESERVEE AUX TESTS. Aucun appelant de production ne doit fournir ce
+   * delegate ; la politique d'assemblage de la Phase 3 (gateway/agent, cf.
+   * PLAN.md) devra INTERDIRE cette injection hors tests (SECURITY.md §
+   * « isDryRun injectable »).
+   */
   isDryRun?: () => boolean;
   /**
    * Credentials API + adresse du signataire pour les ECRITURES et endpoints
@@ -87,6 +94,42 @@ export class AmbiguousOrderError extends Error {
         `ne pas re-emettre sans reconciliation. detail: ${detail}`,
     );
     this.name = 'AmbiguousOrderError';
+  }
+}
+
+/**
+ * PALLAS-M10 — le payload signe ne correspond PAS a l'intention declaree.
+ * `placeOrder` recoit les deux (params + signed) : une divergence ici signifie
+ * qu'un bug ailleurs dans la chaine a construit un ordre different de ce que
+ * l'appelant croit envoyer. Rejet avant tout appel reseau.
+ */
+export class OrderMismatchError extends Error {
+  constructor(detail: string) {
+    super(`placeOrder: le payload signe ne correspond pas aux params declares (${detail})`);
+    this.name = 'OrderMismatchError';
+  }
+}
+
+/**
+ * Compare `params` (l'intention) au `signed.order` (ce qui sera transmis).
+ * Tolérance de 1 unite (1e-6 USD ou share) : l'arithmetique flottante refaite
+ * ici et dans `calculateOrderAmounts` doit donner le meme entier, 1 unite
+ * absorbe un quelconque arrondi de recopie — jamais plus.
+ */
+function assertOrderMatchesParams(signed: SignedOrderPayload, params: OrderParams): void {
+  const o = signed.order;
+  const absBig = (x: bigint): bigint => (x < 0n ? -x : x);
+  const sideMatches = o.side === params.side;
+  const tokenMatches = params.tokenId == null || o.tokenId === params.tokenId;
+  const expected = calculateOrderAmounts(params.side, params.price, params.size);
+  const tol = 1n;
+  const mDiff = absBig(BigInt(o.makerAmount) - expected.makerAmount);
+  const tDiff = absBig(BigInt(o.takerAmount) - expected.takerAmount);
+  if (!sideMatches || !tokenMatches || mDiff > tol || tDiff > tol) {
+    throw new OrderMismatchError(
+      `side(match=${sideMatches}) tokenId(match=${tokenMatches}) makerAmount(Δ=${mDiff} unités 1e-6, tol=${tol}) ` +
+        `takerAmount(Δ=${tDiff} unités 1e-6, tol=${tol})`,
+    );
   }
 }
 
@@ -224,6 +267,9 @@ export class PolymarketClient {
       await this.dryRunBlock('placeOrder');
     }
     assertSignatureSchemaValidated();
+    // PALLAS-M10 : l'intention declaree doit correspondre a ce qui est signe,
+    // AVANT tout appel reseau (une divergence = bug ailleurs dans la chaine).
+    assertOrderMatchesParams(signed, params);
     const creds = this.requireAuth('placeOrder');
 
     const body = JSON.stringify({
@@ -328,6 +374,12 @@ export class PolymarketClient {
       headers: { accept: 'application/json', ...headers },
       signal: AbortSignal.timeout(10_000),
     });
+    // PALLAS-M10 : erreur HTTP explicite AVANT le parsing schema (un 401/500 ne
+    // doit jamais devenir une erreur de schema JSON confuse).
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Polymarket deriveApiKey HTTP ${res.status}: ${body.slice(0, 200)}`);
+    }
     const data = parseClob(DeriveApiKeyResponseSchema, 'deriveApiKey', await res.json().catch(() => null));
     return {
       apiKey: data.apiKey,

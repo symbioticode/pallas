@@ -1,5 +1,5 @@
 import { test, expect, afterEach, vi } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -161,4 +161,28 @@ test('M04: calculateVaR rejette un champ manquant (sample_size absent)', async (
     '{"historical_var":1,"parametric_var":2,"cvar":3,"confidence_level":0.95,"mean_pnl":0,"std_dev":1}';
   vi.stubEnv('PALLAS_RISK_BIN', fakeRiskBinary(`{"var":${varWithoutSample}}`));
   await expect(() => calculateVaR([-1, -2], 0.95)).rejects.toThrow(RiskEngineError);
+});
+
+// --- PALLAS-M10 : PALLAS_RISK_BIN durci (meme rigueur que sandbox.ts isRegularExecutable) ---
+
+test('M10: PALLAS_RISK_BIN vers un dossier => MissingBinaryError (rejete comme sandbox)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pallas-risk-bin-dir-'));
+  vi.stubEnv('PALLAS_RISK_BIN', dir);
+  await expect(() => validateTrade(validTrade, { hist_pnls: [] })).rejects.toThrow(MissingBinaryError);
+});
+
+test('M10: PALLAS_RISK_BIN un symlink vers un fichier non executable => MissingBinaryError', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pallas-risk-bin-link-'));
+  const target = join(dir, 'target');
+  writeFileSync(target, 'pas un executable'); // fichier regulier SANS droit x
+  const link = join(dir, 'risk-engine');
+  symlinkSync(target, link);
+  vi.stubEnv('PALLAS_RISK_BIN', link);
+  await expect(() => validateTrade(validTrade, { hist_pnls: [] })).rejects.toThrow(MissingBinaryError);
+});
+
+test('M10: validateTrade fonctionne toujour via PALLAS_RISK_BIN executable regulier', async () => {
+  vi.stubEnv('PALLAS_RISK_BIN', fakeRiskBinary(`{"decision":{"allowed":true,"gates":[],"rejected_by":[],"suggested_size_usd":60},"state":${VALID_STATE_JSON}}`));
+  const d = await validateTrade(validTrade, { hist_pnls: [] });
+  expect(d.allowed).toBe(true);
 });
