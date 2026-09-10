@@ -17,8 +17,8 @@
 > | `PALLAS-M02` | Signature Polymarket EIP-712 — correction et validation officielle | 🔴 Critique → ✅ clôturée 2026-09-09 |
 > | `PALLAS-M03` | Sandbox bwrap — fix opérationnel + suppression du faux positif réseau | 🟠 Haute → ✅ clôturée 2026-09-09 |
 > | `PALLAS-M04` | Frontières TS/HTTP — validation runtime stricte, retry, idempotence | 🟠 Haute → ✅ clôturée 2026-09-09 |
-> | `PALLAS-M05` | Credentials & mémoire — honnêteté du zeroing, fermeture des fuites en clair | 🟡 Moyenne |
-> | `PALLAS-M06` | CI/CD + documentation sobre | 🟡 Moyenne |
+> | `PALLAS-M05` | Credentials & mémoire — honnêteté du zeroing, fermeture des fuites en clair | 🟡 Moyenne → ✅ clôturée 2026-09-09 |
+> | `PALLAS-M06` | CI/CD + documentation sobre | 🟡 Moyenne → ✅ clôturée 2026-09-09 |
 >
 > Aucune nouvelle case ne doit être cochée `[x]` sans que le critère de succès correspondant de la
 > mission associée soit vérifié et journalisé (`mission-PALLAS-M0X-journal.md`).
@@ -119,7 +119,7 @@ pallas/
 ├── tests/
 ├── package.json / tsconfig.json / vitest.config.ts
 ├── shell.nix                   # dev shell obligatoire (linker gcc)
-└── .github/workflows/ci.yml   # VIDE — aucune pipeline (.gitkeep seulement)
+└── .github/workflows/ci.yml   # CI GitHub Actions (2 jobs TS/Rust) — PALLAS-M06 ✔
 ```
 
 ---
@@ -282,13 +282,18 @@ Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a tr
 - [ ] Skill loader (lazy-loading, hot-reload)
 - [ ] Premiere skill Polymarket (fetch markets, place order, portfolio)
 
-## Phase 5 — CI/CD + Documentation (S9-S10) — NON COMMENCE, DEVIENT PRIORITAIRE (PALLAS-M06)
+## Phase 5 — CI/CD + Documentation (FAIT — PALLAS-M06 clôturée le 2026-09-09)
 
-- [ ] CI Pipeline (`npm ci`, `cargo test` en dev shell, typecheck, test, build, `npm audit --audit-level=high`)
-- [ ] Documentation sobre : README reel, docs/ARCHITECTURE.md, SECURITY.md, TRADING.md
-- [ ] Pas de SECURITY_AUDIT.md tant que pas d'audit reel — **l'audit du 2026-09-09 EST cet audit
-      reel : `AUDIT-PALLAS-v0.1.md` peut etre reference publiquement une fois les corrections
-      appliquees, sans reecrire son verdict.**
+- [x] CI Pipeline — `.github/workflows/ci.yml` : job TS (`npm ci`, `npm run build`, `npm run
+      typecheck`, `npm test`, `npm audit --audit-level=high`) + job Rust (`cargo test`, toolchain
+      stable directe — crate 100% Rust pur, pas de nix en CI). Test d'échec volontaire du pipeline
+      prouvé (voir journal M06). Seuil audit `high` justifié (2 modérées `@vitest/mocker`
+      dev-only, non exploitable en CI ; Vitest 5 = piste future).
+- [x] Documentation sobre : `README.md` (état réel, pas de badges), `docs/ARCHITECTURE.md` (modules
+      vides marqués « non commencé »), `docs/SECURITY.md` (reporting + protections + limites),
+      `docs/TRADING.md` (timeout/AmbiguousOrderError + réconciliation) — tous sous git et liés à
+      `AUDIT-PALLAS-v0.1.md`.
+- [x] `AUDIT-PALLAS-v0.1.md` = audit réel daté (commit `813be02`), référencé publiquement.
 
 ---
 
@@ -330,7 +335,7 @@ Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a tr
 | 2 — Polymarket | 2 sem | +4-5j (PALLAS-M02 — clôturée 2026-09-09, priorité critique levée) |
 | 3 — Gateway + Agent | 2 sem | inchangee |
 | 4 — Skills | 2 sem | inchangee |
-| 5 — CI/CD + docs | 1 sem | +2j (PALLAS-M06) |
+| 5 — CI/CD + docs | 1 sem | +2j (PALLAS-M06) — clôturée 2026-09-09 |
 | **Total MVP** | **~10 sem** | **~11.5-12 sem** |
 
 *Publication : projet renomme **Pallas** — depot public **github.com/symbioticode/pallas**,

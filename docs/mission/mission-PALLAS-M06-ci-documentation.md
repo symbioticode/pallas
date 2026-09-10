@@ -5,8 +5,7 @@ Mission ID : PALLAS-M06
 Date de création : 2026-09-09
 Auteur / Agent : Claude (planification) — exécution par agent de code au choix
 Projet : Pallas
-Statut : ACTIF — à lancer en dernier, une fois PALLAS-M01 à M05 au moins partiellement closes
-(la CI doit vérifier un état réel, pas figer les bugs actuels comme "normaux")
+Statut : **CLÔTURÉE le 2026-09-09** (exécution : opencode/big-pickle — journal : `mission-PALLAS-M06-journal.md`)
 Source de vérité : `AUDIT-PALLAS-v0.1.md` (sections "Cases [ ]", "Dépendances") + `PLAN.md` Phase 5
 
 ## 1. Contexte
@@ -83,14 +82,14 @@ existant qui peut avoir un état différent.
    mission correspondante.
 
 ## 7. Critères de succès
-- [ ] La CI GitHub Actions tourne sur un checkout propre et échoue sur un bug volontaire introduit
+- [x] La CI GitHub Actions tourne sur un checkout propre et échoue sur un bug volontaire introduit
       pour le test (preuve que ce n'est pas un pipeline cosmétique).
-- [ ] `npm audit`/`cargo audit` sont exécutés en CI avec un seuil explicitement justifié dans le
+- [x] `npm audit`/`cargo audit` sont exécutés en CI avec un seuil explicitement justifié dans le
       journal (pas un choix par défaut non discuté).
-- [ ] `README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/TRADING.md` sont suivis dans
+- [x] `README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/TRADING.md` sont suivis dans
       git, sobres, et renvoient explicitement vers `AUDIT-PALLAS-v0.1.md`.
-- [ ] Aucun document ne décrit gateway/agent/ledger/skills comme "en cours" alors qu'ils sont vides.
-- [ ] Les réserves de sécurité non closes au moment de la rédaction sont listées explicitement dans
+- [x] Aucun document ne décrit gateway/agent/ledger/skills comme "en cours" alors qu'ils sont vides.
+- [x] Les réserves de sécurité non closes au moment de la rédaction sont listées explicitement dans
       `docs/SECURITY.md` avec renvoi vers la mission correspondante.
 
 ## 8. Interdictions

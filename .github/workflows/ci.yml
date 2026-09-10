@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+      # Seuil 'high' — 2 advisorys modérées restent : @vitest/mocker (path traversal dans
+      # le mock HTTP, dev-only, non-exploitable en CI car aucun test n'ouvre de mock URLs).
+      # Upgrade vers Vitest 5 (breaking change) documentée en piste future (mission PALLAS-M06).
+      - run: npm audit --audit-level=high
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Le crate risk-engine est 100% Rust pur (serde, serde_json, proptest) — aucune
+      # dépendance native C, pas besoin de nix-shell ni gcc. Le linker `cc` est fourni
+      # par le runner ubuntu-latest (build-essential).
+      - run: cargo test
+        working-directory: crates/risk-engine
+      # cargo audit (action actions-rust-lang/audit v2 : installe + met en cache cargo-audit).
+      - uses: actions-rust-lang/audit@v2
+        with:
+          working-directory: crates/risk-engine

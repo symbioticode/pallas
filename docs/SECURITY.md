@@ -1,7 +1,28 @@
 # Sécurité — Pallas
 
-Statut : document amorcé par PALLAS-M03 (2026-09-09), complété mémoire par PALLAS-M05
-(2026-09-09). À compléter par PALLAS-M06 (CI + doc sobre).
+Statut : document complété par PALLAS-M03 (sandbox), PALLAS-M05 (mémoire) et PALLAS-M06
+(CI + reporting + réserves closes). Date : 2026-09-09.
+
+## Signalement de vulnérabilité
+
+Ce dépôt est public. Toute vulnérabilité est traitée avec la même rigueur que le reste du
+projet : pas de fausse sécurité. Pour signaler un problème — y compris un commentaire ou une
+affirmation trompeuse — ouvrir une issue GitHub ou, pour les sujets sensibles (clés, exfiltration,
+logique financière), contacter le mainteneur directement. État vérifié par l'audit externe
+`docs/AUDIT-PALLAS-v0.1.md` : les protections annoncées sont celles réellement implémentées, et les
+limites sont documentées ci-dessous et dans les rapports de mission `docs/mission/`.
+
+## Périmètre des garanties (résumé)
+
+| Protection | État | Mission de référence |
+|---|---|---|
+| Dry-run global par défaut + confirmation "LIVE" | ✔ fail-closed | M01 |
+| Chiffrement credentials AES-256-GCM + scrypt | ✔ | M01 |
+| Signature CLOB EIP-712 V2 + `schemaGate` (pas d'émission sans preuve) | ✔ | M02 |
+| Sandbox bwrap : écriture neutralisée, isolation réseau **prouvée** | ✔ | M03 |
+| Frontières runtime : schémas Zod, rejet explicite des réponses hors contrat | ✔ | M04 |
+| Zeroing mémoire : copies Buffer des clés effacées, strings non-effaçables | ✔ (limité, voir §"Mémoire") | M05 |
+| CI active (npm + cargo, audit) | ✔ | M06 |
 
 ## Sandbox bwrap (phase 1.3) — portée réelle de la protection
 
@@ -27,10 +48,19 @@ implicitement permis (stdout/stderr renvoyés à l'appelant).
   applicatif et remonté bruyamment — jamais exécution en clair, jamais un simple
   code de sortie non nul assimilable à une « isolation ».
 
-### Limites documentées / à traiter en PALLAS-M06
+### Limites documentées (état au 2026-09-09)
 
-- CI non câblée (`npm test`/typecheck/cargo ne tournent pas en pipeline).
-- Composants de sécurité non engagés (packages/agent absent).
+- **Retry placeOrder** : l'API CLOB Polymarket n'a aucune clé d'idempotence ; un timeout ou
+  un 5xx laisse l'ordre dans un état indéterminé (`AmbiguousOrderError`) — réconciliation à
+  la main (voir `docs/TRADING.md`), pas de retry auto.
+- **`isDryRun` injectable** au constructeur de `PolymarketClient` (utile aux tests) : c'est une
+  porte de contournement pour tout appelant interne — à restreindre quand un vrai runtime
+  existera (packages/agent, voir `PLAN.md` §1.2 réserve auditiée).
+- **packages/agent, gateway, ledger, skills** : absents — le code de sécurité qui les
+  concerne (sanitizer câblé, ledger, auth de la gateway) n'est donc pas encore actif.
+- **CI** (PALLAS-M06) : `npm audit --audit-level=high` — deux advisorys **modérées** assumées
+  (`@vitest/mocker` path traversal, dev-only, non exploitable en CI). Upgrade Vitest 5 = piste
+  future documentée dans le journal M06.
 
 ## Credentials en mémoire — garanties réelles (PALLAS-M05)
 
