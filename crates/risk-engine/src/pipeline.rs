@@ -52,6 +52,7 @@ pub struct TradeRequest {
 /// Etat persistant du moteur de risque.
 #[derive(Default)]
 pub struct RiskState {
+    pub kill_switch_engaged: bool,
     pub circuit_breaker: CircuitBreaker,
     pub volatility: VolatilityDetector,
     pub hist_pnls: Vec<f64>,
@@ -60,6 +61,7 @@ pub struct RiskState {
 impl RiskState {
     pub fn new() -> Self {
         Self {
+            kill_switch_engaged: false,
             circuit_breaker: CircuitBreaker::new(CircuitBreakerConfig::default()),
             volatility: VolatilityDetector::new(VolatilityConfig::default()),
             hist_pnls: Vec::new(),
@@ -67,19 +69,69 @@ impl RiskState {
     }
 }
 
+/// Reseau de validation des bornes metier d'un `TradeRequest`. Toute valeur
+/// hors bornes (ou none projetee) fait rejeter la porte `INPUT_VALIDATION`
+/// avant meme les autres etapes.
+fn input_validation_errors(req: &TradeRequest) -> Vec<String> {
+    let mut errors: Vec<String> = Vec::new();
+    let mut is_bad = |field: &str, cond: bool| {
+        if cond {
+            errors.push(field.to_string());
+        }
+    };
+    is_bad("market_id", req.market_id.trim().is_empty());
+    is_bad("side", req.side != "buy" && req.side != "sell");
+    is_bad("price", !(req.price.is_finite() && req.price > 0.0 && req.price <= 1.0));
+    is_bad("quantity", !(req.quantity.is_finite() && req.quantity > 0.0));
+    is_bad("est_value_usd", !(req.est_value_usd.is_finite() && req.est_value_usd > 0.0));
+    is_bad("win_probability", !(req.win_probability.is_finite() && (0.0..=1.0).contains(&req.win_probability)));
+    is_bad("odds", !(req.odds.is_finite() && req.odds > 0.0));
+    is_bad("bankroll_usd", !(req.bankroll_usd.is_finite() && req.bankroll_usd > 0.0));
+    is_bad("confidence", !(req.confidence.is_finite() && (0.0..=1.0).contains(&req.confidence)));
+    is_bad("max_order_usd", !(req.max_order_usd.is_finite() && req.max_order_usd > 0.0));
+    is_bad("max_drawdown_usd", !(req.max_drawdown_usd.is_finite() && req.max_drawdown_usd > 0.0));
+    errors
+}
+
 /// Evalue un trade contre toutes les portes de securite. Retourne la decision
 /// sans muter l'etat (le caller applique `apply` apres execution reelle).
+///
+/// Ordre : (1) kill switch, (2) validation des entrees, (3) les 10 gates.
+/// Les deux premieres etapes court-circuitent le pipeline (fail-closed).
 pub fn validate_trade(req: &TradeRequest, state: &RiskState) -> TradeDecision {
+    // 1. Kill switch — bloque tout, quel que soit le reste.
+    if state.kill_switch_engaged {
+        return TradeDecision {
+            allowed: false,
+            gates: vec![GateResult {
+                gate: "KILL_SWITCH".to_string(),
+                action: GateAction::Reject,
+                reason: "Global kill switch is ENGAGED (manual or dry-run isolation)".to_string(),
+            }],
+            rejected_by: vec!["KILL_SWITCH".to_string()],
+            suggested_size_usd: 0.0,
+        };
+    }
+
+    // 2. Validation stricte des bornes metier — avant les 10 gates.
+    let input_errors = input_validation_errors(req);
+    if !input_errors.is_empty() {
+        let reason = format!("Invalid trade input fields: {}", input_errors.join(", "));
+        return TradeDecision {
+            allowed: false,
+            gates: vec![GateResult {
+                gate: "INPUT_VALIDATION".to_string(),
+                action: GateAction::Reject,
+                reason,
+            }],
+            rejected_by: vec!["INPUT_VALIDATION".to_string()],
+            suggested_size_usd: 0.0,
+        };
+    }
+
     let mut gates: Vec<GateResult> = Vec::new();
 
-    // 1. Kill switch global (dry-run / arret manuel).
-    gates.push(GateResult {
-        gate: "KILL_SWITCH".to_string(),
-        action: GateAction::Allow,
-        reason: "Global kill switch is OFF (live trading authorized by dry-run gate)".to_string(),
-    });
-
-    // 2. Circuit breaker.
+    // 3. Circuit breaker.
     let cb_open = state.circuit_breaker.is_open();
     gates.push(GateResult {
         gate: "CIRCUIT_BREAKER".to_string(),
@@ -91,7 +143,7 @@ pub fn validate_trade(req: &TradeRequest, state: &RiskState) -> TradeDecision {
         },
     });
 
-    // 3. Regime de volatilite.
+    // 4. Regime de volatilite.
     let vol = state.volatility.detect();
     if vol.should_halt {
         gates.push(GateResult {
@@ -276,5 +328,71 @@ mod tests {
         let b = validate_trade(&valid_req(), &state);
         assert_eq!(a.allowed, b.allowed);
         assert_eq!(a.rejected_by, b.rejected_by);
+    }
+
+    #[test]
+    fn audit_2026_09_09_rejects_invalid_trade() {
+        // Probe adversariale de l'audit : tout est invalide, rien ne doit passer.
+        let req = TradeRequest {
+            market_id: String::new(),
+            side: "garbage".to_string(),
+            price: 0.6,
+            quantity: 10.0,
+            est_value_usd: -100.0,
+            win_probability: 2.0,
+            odds: 0.7,
+            bankroll_usd: 10_000.0,
+            confidence: 0.8,
+            max_order_usd: 1_000.0,
+            max_drawdown_usd: 5_000.0,
+        };
+        let state = RiskState::new();
+        let d = validate_trade(&req, &state);
+        assert!(!d.allowed);
+        assert!(d.rejected_by.contains(&"INPUT_VALIDATION".to_string()));
+        assert_eq!(d.suggested_size_usd, 0.0);
+        assert_eq!(d.gates.len(), 1, "short-circuit: seule la porte INPUT_VALIDATION");
+    }
+
+    #[test]
+    fn kill_switch_engaged_blocks_every_trade() {
+        let mut state = RiskState::new();
+        state.kill_switch_engaged = true;
+        let d = validate_trade(&valid_req(), &state);
+        assert!(!d.allowed);
+        assert!(d.rejected_by.contains(&"KILL_SWITCH".to_string()));
+        assert_eq!(d.gates.len(), 1, "short-circuit: seule la porte KILL_SWITCH");
+        // meme un trade autrement valide est bloque.
+        let mut req = valid_req();
+        req.side = "garbage".to_string();
+        let d2 = validate_trade(&req, &state);
+        assert!(d2.rejected_by.contains(&"KILL_SWITCH".to_string()));
+        assert!(!d2.rejected_by.contains(&"INPUT_VALIDATION".to_string()));
+    }
+
+    #[test]
+    fn input_validation_rejects_each_bound() {
+        let cases: Vec<(&'static str, Box<dyn Fn(&mut TradeRequest)>)> = vec![
+            ("market_id", Box::new(|r| r.market_id = String::new())),
+            ("side", Box::new(|r| r.side = "SELL".to_string())),
+            ("price", Box::new(|r| r.price = 1.5)),
+            ("quantity", Box::new(|r| r.quantity = 0.0)),
+            ("est_value_usd", Box::new(|r| r.est_value_usd = -1.0)),
+            ("win_probability", Box::new(|r| r.win_probability = 1.5)),
+            ("bankroll_usd", Box::new(|r| r.bankroll_usd = 0.0)),
+            ("confidence", Box::new(|r| r.confidence = -0.5)),
+        ];
+        for (field, mutate) in cases {
+            let mut req = valid_req();
+            mutate(&mut req);
+            let state = RiskState::new();
+            let d = validate_trade(&req, &state);
+            assert!(!d.allowed, "field {field} devrait etre rejete");
+            assert!(
+                d.rejected_by.contains(&"INPUT_VALIDATION".to_string()),
+                "field {field}: rejected_by = {:?}",
+                d.rejected_by
+            );
+        }
     }
 }

@@ -44,10 +44,41 @@ export interface VaRResult {
 
 export interface StateInput {
   hist_pnls: number[];
+  kill_switch_engaged?: boolean;
+  circuit_breaker?: CircuitBreakerState;
+  volatility?: VolatilityState;
+}
+
+/** Etat du circuit breaker (snapshot serialize par la CLI Rust). */
+export interface CircuitBreakerState {
+  state: 'Closed' | 'HalfOpen' | 'Open';
+  consecutive_losses: number;
+  cumulative_pnl: number;
+  peak_pnl: number;
+  since_trip: number;
+}
+
+/** Etat du detecteur de volatilite (snapshot serialize par la CLI Rust). */
+export interface VolatilityState {
+  window: number[];
+  baseline: number | null;
+}
+
+/** Etat persistant retourne par la CLI pour que l'appelant le persiste. */
+export interface StateOutput {
+  hist_pnls: number[];
+  kill_switch_engaged: boolean;
+  circuit_breaker: CircuitBreakerState;
+  volatility: VolatilityState;
 }
 
 export interface ValidateResponse {
   decision: TradeDecision;
+  state: StateOutput;
+}
+
+export interface RecordResponse {
+  state: StateOutput;
 }
 
 export interface VarResponse {

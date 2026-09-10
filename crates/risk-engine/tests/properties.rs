@@ -2,7 +2,7 @@
 
 use proptest::prelude::*;
 
-/// La VaR historique n'est jamais negative.
+// La VaR historique n'est jamais negative.
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(100))]
 

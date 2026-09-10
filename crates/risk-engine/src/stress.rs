@@ -87,7 +87,7 @@ mod tests {
     fn black_swan_is_worst() {
         let worst = StressScenario::all()
             .into_iter()
-            .max_by(|a, b| a.shock().partial_cmp(&b.shock()).unwrap())
+            .max_by(|a, b| a.shock().total_cmp(&b.shock()))
             .unwrap();
         assert_eq!(worst, StressScenario::BlackSwan);
     }

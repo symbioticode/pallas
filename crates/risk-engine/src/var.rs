@@ -19,12 +19,13 @@ pub struct VaRResult {
 }
 
 /// VaR historique sur un tableau [P&L] donne, au niveau de confiance donne.
+/// `total_cmp` assure un ordre total meme en presence de `NaN` (sans panique).
 pub fn var_historical(pnls: &[f64], confidence: f64) -> f64 {
     if pnls.len() < 2 {
         return 0.0;
     }
     let mut sorted = pnls.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sorted.sort_by(|a, b| a.total_cmp(b));
     let idx = ((1.0 - confidence) * sorted.len() as f64).floor() as usize;
     let idx = idx.max(0).min(sorted.len() - 1);
     let loss = sorted[idx];
@@ -36,12 +37,13 @@ pub fn var_historical(pnls: &[f64], confidence: f64) -> f64 {
 }
 
 /// CVaR (Expected Shortfall) sur un tableau [P&L].
+/// `total_cmp` assure un ordre total meme en presence de `NaN` (sans panique).
 pub fn cvar(pnls: &[f64], confidence: f64) -> f64 {
     if pnls.len() < 2 {
         return 0.0;
     }
     let mut sorted = pnls.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sorted.sort_by(|a, b| a.total_cmp(b));
     let tail_count = ((1.0 - confidence) * sorted.len() as f64).floor() as usize + 1;
     let tail_count = tail_count.max(1).min(sorted.len());
     let sum: f64 = sorted[..tail_count].iter().sum();
@@ -234,5 +236,19 @@ mod tests {
         t.add(3.0);
         t.add(4.0);
         assert_eq!(t.pnls(), vec![2.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn nan_does_not_panic_and_is_treated_as_worst() {
+        // NaN dans l'API bibliotheque publique ne doit jamais paniquer
+        // (total_cmp classe NaN en fin d'ordre).
+        let pnls = vec![1.0, f64::NAN, -5.0, -8.0];
+        let v = var_historical(&pnls, 0.95);
+        assert!(v.is_finite());
+        let c = cvar(&pnls, 0.95);
+        assert!(c.is_finite());
+        // calculate_at ne panique pas non plus.
+        let r = calculate_at(&pnls, 0.95);
+        assert!(r.historical_var.is_finite());
     }
 }

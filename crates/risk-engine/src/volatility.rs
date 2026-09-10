@@ -5,12 +5,22 @@
 //! puis classification relative a cette baseline. En regime extreme, trading
 //! arrete ; en regime haut, taille reduite.
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Regime {
     Low,
     Normal,
     High,
     Extreme,
+}
+
+/// Etat dynamique du detecteur (fenetre + baseline), serialisable pour le
+/// contrat CLI. La config (tailles de fenetre, seuils) reste par defaut.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VolatilityState {
+    pub window: Vec<f64>,
+    pub baseline: Option<f64>,
 }
 
 impl Regime {
@@ -134,6 +144,20 @@ impl VolatilityDetector {
             should_halt,
         }
     }
+
+    /// Snapshot serialisable pour le contrat CLI (transport entre appels).
+    pub fn snapshot(&self) -> VolatilityState {
+        VolatilityState {
+            window: self.window.clone(),
+            baseline: self.baseline,
+        }
+    }
+
+    /// Restaure l'etat depuis un snapshot recu (persistance par l'appelant).
+    pub fn restore(&mut self, snap: &VolatilityState) {
+        self.window = snap.window.clone();
+        self.baseline = snap.baseline;
+    }
 }
 
 #[cfg(test)]
@@ -197,5 +221,21 @@ mod tests {
         let s = d.detect();
         assert_eq!(s.should_halt, true, "regime = {:?}", s.regime);
         assert_eq!(s.regime, Regime::Extreme);
+    }
+
+    #[test]
+    fn snapshot_roundtrip_preserves_state() {
+        let mut d = VolatilityDetector::new(VolatilityConfig::default());
+        for i in 0..30 {
+            d.add(if i % 2 == 0 { 0.005 } else { -0.005 });
+        }
+        let snap = d.snapshot();
+        assert!(snap.baseline.is_some());
+
+        let mut restored = VolatilityDetector::default();
+        restored.restore(&snap);
+        assert_eq!(restored.snapshot(), snap);
+        let s = restored.detect();
+        assert_eq!(s.regime, Regime::Normal);
     }
 }

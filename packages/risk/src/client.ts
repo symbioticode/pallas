@@ -15,7 +15,9 @@ import { resolve } from 'node:path';
 
 import type {
   ErrorResponse,
+  RecordResponse,
   StateInput,
+  StateOutput,
   TradeDecision,
   TradeRequest,
   VaRResult,
@@ -142,6 +144,23 @@ function runBinary(bin: string, input: string, timeoutMs = 10_000): Promise<stri
 export async function validateTrade(trade: TradeRequest, state: StateInput = { hist_pnls: [] }): Promise<TradeDecision> {
   const res = await invoke<ValidateResponse>({ command: 'validate', trade, state });
   return res.decision;
+}
+
+/** Comme validateTrade, mais expose aussi l'etat persistant a stocker. */
+export async function validateTradeWithState(
+  trade: TradeRequest,
+  state: StateInput = { hist_pnls: [] },
+): Promise<ValidateResponse> {
+  return await invoke<ValidateResponse>({ command: 'validate', trade, state });
+}
+
+/**
+ * Enregistre un P&L realise dans l'etat persistant (circuit breaker, volatilite)
+ * et retourne l'etat mis a jour a persister par l'appelant pour le prochain appel.
+ */
+export async function recordPnl(state: StateInput, pnl: number): Promise<StateOutput> {
+  const res = await invoke<RecordResponse>({ command: 'record', state, pnl });
+  return res.state;
 }
 
 /** Calcule VaR/CVaR sur une serie de P&L historique. */
