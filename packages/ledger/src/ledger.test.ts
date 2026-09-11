@@ -117,13 +117,13 @@ describe('M12: chaîne valide et proprietes append-only', () => {
     expect(ledger.verify().valid).toBe(true);
   });
 
-  it('M12: persistance fichier — roundtrip load/append/verify + écriture atomique', () => {
+  it('M12: persistance fichier — roundtrip load/append/verify + écriture atomique', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'pallas-ledger-'));
     try {
       const path = join(dir, 'ledger.json');
       const fl = FileLedger.load(path);
-      fl.append({ event: 'a', timestamp: T0, payload: { v: 1 } });
-      fl.append({ event: 'b', timestamp: T0, payload: { v: 2 } });
+      await fl.append({ event: 'a', timestamp: T0, payload: { v: 1 } });
+      await fl.append({ event: 'b', timestamp: T0, payload: { v: 2 } });
 
       const reloaded = FileLedger.load(path);
       expect(reloaded.length).toBe(2);
@@ -139,21 +139,23 @@ describe('M12: chaîne valide et proprietes append-only', () => {
     }
   });
 
-  it('M12: falsification APRES persistance fichier -> verify detecte au reload', () => {
+  it('M12: falsification APRES persistance fichier -> verify detecte au reload', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'pallas-ledger-'));
     try {
       const path = join(dir, 'ledger.json');
       const fl = FileLedger.load(path);
-      fl.append({ event: 'a', timestamp: T0, payload: { v: 1 } });
-      fl.append({ event: 'b', timestamp: T0, payload: { v: 2 } });
-      fl.append({ event: 'c', timestamp: T0, payload: { v: 3 } });
+      await fl.append({ event: 'a', timestamp: T0, payload: { v: 1 } });
+      await fl.append({ event: 'b', timestamp: T0, payload: { v: 2 } });
+      await fl.append({ event: 'c', timestamp: T0, payload: { v: 3 } });
 
       // Altération manuelle du fichier (le mode d'attaque du monde réel).
       const doc = JSON.parse(readFileSync(path, 'utf8')) as { entries: Array<{ payload: unknown }> };
       (doc.entries[1]!.payload as Record<string, unknown>)['v'] = 999;
       writeFileSync(path, JSON.stringify(doc), 'utf8');
 
-      expect(FileLedger.load(path).verify().valid).toBe(false);
+      // PALLAS-M16 : la falsification est FATALE au chargement (fail-stop),
+      // plus seulement détectée par un verify() post-hoc.
+      expect(() => FileLedger.load(path)).toThrow(/Intégrité|rupture de chaîne/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

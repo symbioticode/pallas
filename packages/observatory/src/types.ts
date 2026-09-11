@@ -17,6 +17,8 @@ export interface ObservatorySnapshot {
     commit: string | null;
     mode: 'DRY RUN';
     ledger: 'VALID' | 'INVALID' | 'EMPTY';
+    /** PALLAS-M16 : un checkpoint .sig ancre-t-il la chaîne ? */
+    ledgerSigned: 'SIGNED' | 'UNSIGNED' | 'INVALID';
     ledgerEntries: number;
     lastEventAt: string | null;
     loop: 'RUNNING' | 'STOPPED' | 'STALE' | 'UNKNOWN';

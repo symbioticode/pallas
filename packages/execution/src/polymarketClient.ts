@@ -80,6 +80,8 @@ export interface OrderResult {
   orderId: string;
   status: OrderStatus;
   dryRun: boolean;
+  /** Statut HTTP brut de la réponse (pour le journal d'audit, PALLAS-M16). */
+  httpStatus: number;
 }
 
 export interface CancelResult {
@@ -350,6 +352,7 @@ export class PolymarketClient {
       orderId,
       status: (data.status as OrderStatus) ?? 'open',
       dryRun: false,
+      httpStatus: res.status,
     };
   }
 

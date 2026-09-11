@@ -16,9 +16,20 @@
  * et vérifiable, pas seulement générée (mission §6.3). Aucune mutation des
  * enregistrements existants n'est exposée : la classe est append-only par
  * construction (état privé, seule `append`/`appendMany` modifient la liste).
+ *
+ * PALLAS-M16 — ce module reste la primitive IN-MEMORY (append-only, hash pure),
+ * volontairement sans E/S. La durabilité, le fail-stop au chargement, le verrou
+ * interprocessus et la signature de tête vivent dans `file-ledger.ts` /
+ * `ledger-signing.ts` : retrouver tout l'historique sans la moindre corruption
+ * silencieuse est la responsabilité du fichier, pas de la classe mémoire.
  */
 
 import { createHash } from 'node:crypto';
+
+/** hex SHA-256 d'une chaîne UTF-8 (utile pour ancrer intents/digests dans les payloads). */
+export function sha256Hex(input: string): string {
+  return createHash('sha256').update(input, 'utf8').digest('hex');
+}
 
 export interface LedgerRecord {
   index: number;
@@ -42,12 +53,8 @@ export interface VerifyResult {
   reason: 'chain' | 'hash' | 'index' | null;
 }
 
-function sha256Hex(input: string): string {
-  return createHash('sha256').update(input, 'utf8').digest('hex');
-}
-
-/** Sérialisation canonique : clés triées récursivement, zéro espace blanc. */
-function canonicalJson(value: unknown): string {
+/** Sérialisation canonique récursive : clés triées, zéro espace blanc. */
+export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') {
     return JSON.stringify(value);
   }

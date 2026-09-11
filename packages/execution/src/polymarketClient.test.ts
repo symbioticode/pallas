@@ -273,6 +273,8 @@ describe('PolymarketClient writes — live valide', () => {
     expect(headers['POLY_SIGNATURE']).toBe(recomputeL2(CREDS.secret, ts, method, path, JSON.stringify(body)));
 
     expect(res).toMatchObject({ orderId: 'order-42', status: 'open', dryRun: false });
+    // PALLAS-M16 : le statut HTTP brut est exposé pour le journal d'audit.
+    expect(res.httpStatus).toBe(200);
   });
 
   it('placeOrder passe postOnly=true quand demande', async () => {

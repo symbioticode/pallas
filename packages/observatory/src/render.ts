@@ -12,6 +12,12 @@ function badge(label: string, kind = label.toLowerCase().replaceAll(' ', '-')): 
   return `<span class="badge badge-${esc(kind)}">${esc(label)}</span>`;
 }
 
+function ledgerSignedBadge(signed: 'SIGNED' | 'UNSIGNED' | 'INVALID'): string {
+  if (signed === 'SIGNED') return badge('SIGNED', 'allow');
+  if (signed === 'INVALID') return badge('SIGNATURE INVALID', 'reject');
+  return badge('UNSIGNED', 'neutral');
+}
+
 export function renderDashboard(snapshot: ObservatorySnapshot): string {
   const execution = snapshot.cycle.execution?.replaceAll('_', ' ').toUpperCase() ?? (snapshot.cycle.status === 'NONE' ? 'NO CYCLE RECORDED' : 'NO EXECUTION YET');
   const warnings = snapshot.warnings.length ? `<div class="warnings">${snapshot.warnings.map((warning) => badge(warning, 'warning')).join('')}</div>` : '';
@@ -19,7 +25,7 @@ export function renderDashboard(snapshot: ObservatorySnapshot): string {
   <section class="panel system"><header><h2>SYSTEM</h2>${badge(snapshot.system.mode, 'dry-run')}</header>
     <div class="identity"><strong>PALLAS</strong><span>APP v${esc(snapshot.system.version)} · AUDIT BASELINE v0.3 · ${esc(snapshot.system.commit ?? 'COMMIT UNKNOWN')}</span></div>
     <div class="pipeline"><span>MARKET</span><i>→</i><span>SIGNAL</span><i>→</i><span>RISK</span><i>→</i><strong>${esc(execution)}</strong><i>→</i><span>LEDGER</span></div>
-    <dl><div><dt>REFERENCE LOOP</dt><dd>${badge(snapshot.system.loop, snapshot.system.loop === 'RUNNING' ? 'allow' : snapshot.system.loop === 'STOPPED' ? 'neutral' : 'warning')}</dd></div><div><dt>LAST EVENT AGE</dt><dd>${snapshot.system.loopAgeSeconds === null ? 'UNKNOWN' : `${snapshot.system.loopAgeSeconds}s`}</dd></div><div><dt>LEDGER</dt><dd>${badge(snapshot.system.ledger)}</dd></div><div><dt>ENTRIES</dt><dd>${snapshot.system.ledgerEntries}</dd></div><div><dt>LAST EVENT</dt><dd>${esc(snapshot.system.lastEventAt)}</dd></div></dl>
+    <dl><div><dt>REFERENCE LOOP</dt><dd>${badge(snapshot.system.loop, snapshot.system.loop === 'RUNNING' ? 'allow' : snapshot.system.loop === 'STOPPED' ? 'neutral' : 'warning')}</dd></div><div><dt>LAST EVENT AGE</dt><dd>${snapshot.system.loopAgeSeconds === null ? 'UNKNOWN' : `${snapshot.system.loopAgeSeconds}s`}</dd></div><div><dt>LEDGER</dt><dd>${badge(snapshot.system.ledger)}${ledgerSignedBadge(snapshot.system.ledgerSigned)}</dd></div><div><dt>ENTRIES</dt><dd>${snapshot.system.ledgerEntries}</dd></div><div><dt>LAST EVENT</dt><dd>${esc(snapshot.system.lastEventAt)}</dd></div></dl>
   </section>
   <section class="panel state"><header><h2>DURABILITY · STATE</h2>${badge(caseLabel(snapshot.durability.format, snapshot.durability.integrity))}${snapshot.durability.killSwitchEngaged ? badge('KILL SWITCH', 'reject') : ''}</header>
     <dl class="metrics">

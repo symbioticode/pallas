@@ -136,3 +136,32 @@ test('texte externe menace : sanitizer detecte la menace, ledger threat_detected
   expect(sanitized.payload.modified).toBe(true);
   expect(FileLedger.load(join(dir, 'ledger.json')).verify().valid).toBe(true);
 });
+
+test('M16: schéma d événement enrichi — correlation_id, intent_hash, timestamps début/fin, attempt', async () => {
+  vi.stubEnv('PALLAS_RISK_BIN', fakeRiskBinary(DECISION_ALLOW));
+  const { dir } = await runCycleOnce();
+
+  const l = JSON.parse(require('node:fs').readFileSync(join(dir, 'ledger.json'), 'utf8'));
+  const riskDecision = l.entries.find((e: { event: string }) => e.event === 'risk_decision');
+  expect(riskDecision.payload).toMatchObject({
+    correlation_id: expect.any(String),
+    intent_hash: expect.stringMatching(/^[0-9a-f]{64}$/),
+    started_at: expect.any(String),
+    finished_at: expect.any(String),
+    state_persisted: true,
+  });
+
+  const exec = l.entries.find((e: { event: string }) => e.event === 'execution_dry_run_blocked');
+  expect(exec.payload).toMatchObject({
+    correlation_id: expect.any(String),
+    attempt: expect.any(Number),
+    started_at: expect.any(String),
+    finished_at: expect.any(String),
+  });
+
+  // l'intent_hash du ledger est identique à celui persiste dans l'état durable
+  const store = await import('./durable-state.js').then((m) => new m.DurableStateStore(join(dir, 'risk-state.json')));
+  const doc = store.read();
+  const lifecycle = doc.orders.find((o) => o.status === 'DECIDED');
+  expect(lifecycle?.intent_hash).toBe(riskDecision.payload.intent_hash);
+});

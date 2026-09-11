@@ -131,6 +131,38 @@ describe('Observatory rendering', () => {
     expect(renderDashboard(snapshot)).toContain('LEDGER INVALID');
   });
 
+  it('M16: exposes LEDGER UNSIGNED and renders the badge without a checkpoint', async () => {
+    const snapshot = await fixtureSnapshot(true);
+    expect(snapshot.system.ledgerSigned).toBe('UNSIGNED');
+    const html = renderDashboard(snapshot);
+    expect(html).toContain('UNSIGNED');
+    expect(html).toContain('badge-valid');
+  });
+
+  it('M16: a coherent .sig checkpoint manifests LEDGER SIGNED', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-observatory-'));
+    ledgerFile(dir, true);
+    const raw = JSON.parse(readFileSync(join(dir, 'ledger.json'), 'utf8'));
+    const head = raw.entries.at(-1);
+    writeFileSync(join(dir, 'ledger.json.sig'), JSON.stringify({ head_index: head.index, head_hash: head.hash, signature: '0x' + 'ab'.repeat(32) }));
+    const snapshot = await buildSnapshot({ rootDir: dir, ledgerPath: join(dir, 'ledger.json'), riskStatePath: join(dir, 'risk.json'), fetcher: noNetwork, commit: null });
+    expect(snapshot.system.ledger).toBe('VALID');
+    expect(snapshot.system.ledgerSigned).toBe('SIGNED');
+    expect(snapshot.warnings).not.toContain('LEDGER UNSIGNED (signature PALLAS-M16 non active)');
+    expect(renderDashboard(snapshot)).toContain('SIGNED');
+  });
+
+  it('M16: a checkpoint that no longer anchors the chain escalates to SIGNATURE INVALID', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-observatory-'));
+    ledgerFile(dir, true);
+    const raw = JSON.parse(readFileSync(join(dir, 'ledger.json'), 'utf8'));
+    writeFileSync(join(dir, 'ledger.json.sig'), JSON.stringify({ head_index: 3, head_hash: '0'.repeat(64), signature: '0x' + 'cd'.repeat(32) }));
+    const snapshot = await buildSnapshot({ rootDir: dir, ledgerPath: join(dir, 'ledger.json'), riskStatePath: join(dir, 'risk.json'), fetcher: noNetwork, commit: null });
+    expect(snapshot.system.ledgerSigned).toBe('INVALID');
+    expect(snapshot.warnings).toContain('LEDGER CHECKPOINT INVALID (chaîne réécrite après signature ?)');
+    expect(renderDashboard(snapshot)).toContain('SIGNATURE INVALID');
+  });
+
   it('renders NO CYCLE RECORDED when no cycle exists', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'pallas-observatory-'));
     writeFileSync(join(dir, 'ledger.json'), JSON.stringify({ root: 'pallas', entries: [] }));

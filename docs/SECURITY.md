@@ -1,7 +1,8 @@
 # Sécurité — Pallas
 
-Statut : document complété par PALLAS-M03 (sandbox), PALLAS-M05 (mémoire) et PALLAS-M06
-(CI + reporting + réserves closes + annexe de vérification réelle). Date : 2026-09-10.
+Statut : document complété par PALLAS-M03 (sandbox), PALLAS-M05 (mémoire), PALLAS-M06
+(CI + reporting + réserves closes + annexe de vérification réelle) et PALLAS-M16 (signature
+séparée du ledger). Date : 2026-09-11.
 
 ## Signalement de vulnérabilité
 
@@ -22,6 +23,7 @@ limites sont documentées ci-dessous et dans les rapports de mission `docs/missi
 | Sandbox bwrap : écriture neutralisée, isolation réseau **prouvée** | ✔ | M03 |
 | Frontières runtime : schémas Zod, rejet explicite des réponses hors contrat | ✔ | M04 |
 | Zeroing mémoire : copies Buffer des clés effacées, strings non-effaçables | ✔ (limité, voir §"Mémoire") | M05 |
+| Ledger fail-stop + signature séparée (clé privée hors process écrivain) | ✔ | M16 |
 | CI active (npm + cargo, audit) | ✔ | M06 |
 
 ## Sandbox bwrap (phase 1.3) — portée réelle de la protection
@@ -67,8 +69,8 @@ implicitement permis (stdout/stderr renvoyés à l'appelant).
   régulier + bit x, après résolution des symlinks, — mêmes règles que bwrap résolu par la sandbox)
   avant tout `spawn`. Un dossier ou un symlink vers un fichier non exécutable est rejeté
   (`MissingBinaryError`).
-- **packages/agent, gateway, ledger, skills** : absents — le code de sécurité qui les
-  concerne (sanitizer câblé, ledger, auth de la gateway) n'est donc pas encore actif.
+- **packages/agent, gateway, skills** : absents — le code de sécurité qui les
+  concerne (auth de la gateway) n'est donc pas encore actif.
 - **CI** (PALLAS-M06 + annexe de vérification réelle, 2026-09-10) : les deux premiers pushs sur
   `main` ont ÉCHOUÉ sur le runner réel — l'action `actions-rust-lang/audit@v2` n'existe pas, et
   bwrap n'est pas fourni par `ubuntu-latest` (4 tests sandbox) alors que le binaire Rust n'était
@@ -80,6 +82,47 @@ implicitement permis (stdout/stderr renvoyés à l'appelant).
   jamais d'exécution en clair. `npm audit --audit-level=high` : deux advisorys **modérées**
   assumées (`@vitest/mocker` path traversal, dev-only, non exploitable en CI). Upgrade Vitest 5 =
   piste future (journal M06).
+
+## Ledger d'audit — signature séparée (PALLAS-M16)
+
+Le ledger (`packages/ledger`) est un journal chaîné SHA-256 dont un checkpoint est signé
+périodiquement avec une clé **Ed25519 distincte et extérieure au process qui écrit**.
+
+### Modèle de menace couvert
+
+- Un attaquant disposant du fichier `ledger.json` ET du process écrivain peut modifier puis
+  **recalculer les hashes avec la fonction exportée** — sans signature, la chaîne redevient
+  cohérente (scénario identifié par AUDIT v0.3 §6). Dès qu'un checkpoint signé existe, cette
+  falsification est détectée **au chargement** (fail-stop, `LedgerIntegrityError`), même quand
+  la clé publique n'est pas montée (le `.sig` seul sert d'ancrage).
+- Chargement fail-stop, cas **distincts** : fichier **absent** = premier démarrage légitime
+  (uniquement si aucun `.sig` n'est présent) ; fichier présent mais JSON invalide/tronqué =
+  `LedgerLoadError` ; rupture de chaîne, checkpoint incohérent, ou `.sig` absent en mode strict
+  (`PALLAS_LEDGER_PUB_KEY` fournie) = `LedgerIntegrityError`. Jamais de réinitialisation
+  silencieuse.
+
+### Séparation de la clé (exigence AUDIT v0.3 « utiliser une clé qui n'a pas besoin d'être en
+mémoire pendant le fonctionnement normal »)
+
+- **Clé privée** : générée hors du process écrivain (`npm run sign-ledger -- gen --dir …`),
+  permissions `0600`, jamais montée par le run loop. Elle ne sert qu'à signer un checkpoint
+  (`sign --key … --ledger …`) ; le process écrivain ne la détient **jamais en mémoire**.
+- **Clé publique** : seule clé montée par le process écrivain, via `PALLAS_LEDGER_PUB_KEY`
+  (PEM inline ou chemin de fichier). Fournie → mode **strict** : `.sig` obligatoire et vérifié
+  cryptographiquement, sinon arrêt.
+- **Ancrage préfixe** : le checkpoint référence l'index+hash d'un maillon existant ; une chaîne
+  honnête peut s'étendre **après** le checkpoint (signature périodique). Toute troncature ou
+  réécriture d'une partie signée est détectée.
+
+### Limites assumées
+
+- **Pas d'ancrage distant/WORM** : `.sig` vivant à côté du ledger ; sans la clé privée on ne
+  peut pas forger, mais un opérateur (détenteur de la clé) reste théoriquement en mesure de
+  réécrire l'historique. Piste d'export périodique vers du stockage distant en écriture seule,
+  hors budget PALLAS-M16.
+- **Observatory non autorité** : moniteur en lecture seule qui manifeste `SIGNED`/`UNSIGNED`/
+  `SIGNATURE INVALID` (badge + warnings) mais ne fail-stop pas — l'autorité reste
+  `@pallas/ledger` au chargement.
 
 ## Credentials en mémoire — garanties réelles (PALLAS-M05)
 

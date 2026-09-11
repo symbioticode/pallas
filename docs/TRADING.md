@@ -111,6 +111,24 @@ Le risk engine est maintenant un véritable gestionnaire de risque de portefeuil
 - La validation du schéma contre une API live (testnet) reste une étape distincte, verrouillée
   par `schemaGate` (`signatureSchemaValidated=false`).
 
+## Journal d'audit — signature séparée (PALLAS-M16)
+
+Le `run-reference-loop` écrit chaque évènement dans `ledger.json` (chaîne SHA-256). La signature
+est **séparée du process écrivain** : signer périodiquement, hors-session :
+
+```
+npm run sign-ledger -- gen --dir ~/.pallas/keys        # une seule fois : clé privée 0600
+npm run sign-ledger -- sign --key ~/.pallas/keys/ledger.key --ledger .pallas/ledger.json
+```
+
+Le run loop ne détient que la clé publique — via `PALLAS_LEDGER_PUB_KEY` (PEM inline ou chemin
+de fichier). Si elle est fournie, le mode est strict : absence ou incohérence de `.sig` au
+chargement = arrêt (fail-stop), jamais de démarrage silencieux. Semantique d'ancrage **préfixe** :
+une chaîne honnête peut s'étendre après le dernier checkpoint signé (signature périodique) ;
+toute troncature ou réécriture d'une partie signée est détectée. Après un incident, un opérateur
+check `ledger.json.sig` / l'Observatory (`SIGNED`/`UNSIGNED`/`SIGNATURE INVALID`) avant toute
+confiance dans le journal.
+
 ## Règles de conduite
 
 - Jamais de double-émission sans réconciliation (voir plus haut).

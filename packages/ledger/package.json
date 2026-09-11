@@ -14,7 +14,11 @@
     "build": "tsc --build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --reporter=verbose",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "sign-ledger": "tsx src/sign-ledger.ts"
+  },
+  "dependencies": {
+    "@pallas/core": "*"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

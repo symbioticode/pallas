@@ -43,22 +43,51 @@ function isRecord(value: unknown): value is ObservatoryRecord {
     && typeof r['prev_hash'] === 'string' && typeof r['hash'] === 'string' && 'payload' in r;
 }
 
-export function readLedger(path: string): { status: 'VALID' | 'INVALID' | 'EMPTY'; entries: ObservatoryRecord[] } {
+export function readLedger(
+  path: string,
+): {
+  status: 'VALID' | 'INVALID' | 'EMPTY';
+  entries: ObservatoryRecord[];
+  signed: 'SIGNED' | 'UNSIGNED' | 'INVALID';
+} {
   let parsed: unknown;
-  try { parsed = JSON.parse(readFileSync(path, 'utf8')); } catch { return { status: 'INVALID', entries: [] }; }
+  try { parsed = JSON.parse(readFileSync(path, 'utf8')); } catch { return { status: 'INVALID', entries: [], signed: checkpointSigned(path, []).signed }; }
   if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as { entries?: unknown }).entries)) {
-    return { status: 'INVALID', entries: [] };
+    return { status: 'INVALID', entries: [], signed: checkpointSigned(path, []).signed };
   }
   const entries = (parsed as { entries: unknown[] }).entries;
-  if (entries.length === 0) return { status: 'EMPTY', entries: [] };
-  if (!entries.every(isRecord)) return { status: 'INVALID', entries: [] };
+  if (entries.length === 0) return { status: 'EMPTY', entries: [], signed: checkpointSigned(path, []).signed };
+  if (!entries.every(isRecord)) return { status: 'INVALID', entries: [], signed: checkpointSigned(path, entries as ObservatoryRecord[]).signed };
   for (let i = 0; i < entries.length; i += 1) {
-    const current = entries[i]!;
+    const current = entries[i] as ObservatoryRecord;
     if (current.index !== i || current.prev_hash !== (i === 0 ? '' : entries[i - 1]!.hash) || current.hash !== expectedHash(current)) {
-      return { status: 'INVALID', entries };
+      return { status: 'INVALID', entries: entries as ObservatoryRecord[], signed: checkpointSigned(path, entries as ObservatoryRecord[]).signed };
     }
   }
-  return { status: 'VALID', entries };
+  return { status: 'VALID', entries: entries as ObservatoryRecord[], signed: checkpointSigned(path, entries as ObservatoryRecord[]).signed };
+}
+
+/** Présence et cohérence (ancrage) d'un checkpoint .sig — observatoire en lecture seule. */
+function checkpointSigned(path: string, entries: readonly ObservatoryRecord[]): { signed: 'SIGNED' | 'UNSIGNED' | 'INVALID' } {
+  let rawCp: unknown;
+  try {
+    rawCp = JSON.parse(readFileSync(`${path}.sig`, 'utf8'));
+  } catch {
+    return { signed: 'UNSIGNED' };
+  }
+  const cp = rawCp as { head_index?: unknown; head_hash?: unknown };
+  if (
+    typeof cp !== 'object' || cp === null ||
+    typeof cp.head_index !== 'number' || typeof cp.head_hash !== 'string'
+  ) {
+    return { signed: 'INVALID' };
+  }
+  const anchor = entries[cp.head_index];
+  if (anchor && anchor.hash === cp.head_hash && anchor.index === cp.head_index) {
+    return { signed: 'SIGNED' };
+  }
+  // Le checkpoint n'ancre plus un maillon présent : SIGNEré mais chaîne réécrite -> on remonte INVALID.
+  return { signed: 'INVALID' };
 }
 
 function readObject(path: string): Record<string, unknown> | null {
@@ -242,6 +271,8 @@ export async function buildSnapshot(options: SnapshotOptions): Promise<Observato
   }
   const warnings: string[] = [];
   if (ledger.status === 'INVALID') warnings.push('LEDGER INVALID');
+  if (ledger.status !== 'INVALID' && ledger.signed === 'INVALID') warnings.push('LEDGER CHECKPOINT INVALID (chaîne réécrite après signature ?)');
+  if (ledger.status !== 'INVALID' && ledger.status !== 'EMPTY' && ledger.signed === 'UNSIGNED') warnings.push('LEDGER UNSIGNED (signature PALLAS-M16 non active)');
   if (durability.format === 'MISSING') warnings.push('RISK STATE UNAVAILABLE');
   if (durability.format === 'LEGACY_V1') warnings.push('RISK STATE LEGACY V1 (migration v2 pending)');
   if (durability.integrity === 'CORRUPT') warnings.push('RISK STATE CORRUPT (checksum) — fail-stop, réconciliation requise');
@@ -262,7 +293,7 @@ export async function buildSnapshot(options: SnapshotOptions): Promise<Observato
   const snapshot: ObservatorySnapshot = {
     generatedAt: now.toISOString(),
     system: { name: 'PALLAS', version: options.version ?? '0.1.0', commit: options.commit === undefined ? resolveCommit(options.rootDir) : options.commit,
-      mode: 'DRY RUN', ledger: ledger.status, ledgerEntries: entries.length, lastEventAt, loop, loopAgeSeconds },
+      mode: 'DRY RUN', ledger: ledger.status, ledgerSigned: ledger.signed, ledgerEntries: entries.length, lastEventAt, loop, loopAgeSeconds },
     durability: {
       format: durability.format,
       integrity: durability.integrity,

@@ -24,7 +24,7 @@
  * `signatureSchemaValidated` jamais touché (le payload signé reste "de forme").
  */
 
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -150,14 +150,14 @@ export async function runReferenceCycle(
       modified: result.modified,
     };
     if (result.threats.length > 0) {
-      ledger.append({
+      await ledger.append({
         event: 'threat_detected',
         timestamp: new Date().toISOString(),
         payload: { source: 'external_text', threats: result.threats },
       });
     }
   }
-  ledger.append({
+  await ledger.append({
     event: 'external_text_sanitized',
     timestamp: new Date().toISOString(),
     payload: threatSummary ?? { source: 'none', threats: 0, modified: false },
@@ -167,7 +167,7 @@ export async function runReferenceCycle(
   const indicatorStart = Date.now();
   const signal = await opts.strategy.evaluate(opts.client);
   const indicatorMs = Date.now() - indicatorStart;
-  ledger.append({
+  await ledger.append({
     event: signal ? 'signal' : 'no_signal',
     timestamp: new Date().toISOString(),
     payload: signal ? { ...signal, indicator_ms: indicatorMs } : { cycle, indicator_ms: indicatorMs },
@@ -197,7 +197,7 @@ export async function runReferenceCycle(
       reconcileSummary = { results: scope.results.length, clear: scope.clear, skipped: false };
     } catch (err) {
       reconcileSummary = { ...reconcileSummary, skipped: false, clear: false };
-      ledger.append({
+      await ledger.append({
         event: 'reconcile_scope_error',
         timestamp: new Date().toISOString(),
         payload: {
@@ -207,12 +207,12 @@ export async function runReferenceCycle(
       });
     }
   }
-  ledger.append({
+
+  await ledger.append({
     event: 'reconcile_scope',
     timestamp: new Date().toISOString(),
     payload: { market_id: trade.market_id, ...reconcileSummary },
   });
-
   // --- étape 3 : risk engine + écriture DURABLE de la décision (DECIDED) ---
   // Lecture + validation + persist DECIDED sous UN SEUL verrou : personne ne
   // peut écrire entre notre lecture d'état et l'enregistrement de la décision.
@@ -263,7 +263,7 @@ export async function runReferenceCycle(
   });
   const riskMs = Date.now() - riskStart;
 
-  ledger.append({
+  await ledger.append({
     event: 'risk_decision',
     timestamp: new Date().toISOString(),
     payload: {
@@ -271,8 +271,11 @@ export async function runReferenceCycle(
       decision: outcome.decision,
       state_after: outcome.state,
       risk_ms: riskMs,
+      started_at: new Date(riskStart).toISOString(),
+      finished_at: new Date().toISOString(),
       state_persisted: true,
       correlation_id: outcome.lifecycle?.correlationId ?? null,
+      intent_hash: outcome.lifecycle?.intent_hash ?? null,
     },
   });
 
@@ -337,11 +340,12 @@ async function attemptPlaceOrder(
   opts: ReferenceLoopOptions,
   signal: ReferenceSignal,
   trade: TradeRequest,
-  lifecycle: { correlationId: string },
+  lifecycle: { correlationId: string; attempt: number },
   ledger: FileLedger,
   store: DurableStateStore,
 ): Promise<CycleResult['execution']> {
   const signer = opts.signer ?? ephemeralSigner();
+  const execStarted = new Date();
   try {
     const signed = buildSignedOrderPayload(
       { tokenId: BigInt(signal.tokenId), side: signal.side, price: signal.price, size: signal.size },
@@ -370,10 +374,18 @@ async function attemptPlaceOrder(
     if (opts.crashAfter === 'acked_written') {
       throw new CrashSimulationError('acked_written');
     }
-    ledger.append({
+    await ledger.append({
       event: 'execution_success',
       timestamp: new Date().toISOString(),
-      payload: { dryRun: res.dryRun, orderId: res.orderId, correlation_id: lifecycle.correlationId },
+      payload: {
+        dryRun: res.dryRun,
+        orderId: res.orderId,
+        http_status: res.httpStatus,
+        correlation_id: lifecycle.correlationId,
+        attempt: lifecycle.attempt,
+        started_at: execStarted.toISOString(),
+        finished_at: new Date().toISOString(),
+      },
     });
     return 'execution_success';
   } catch (err) {
@@ -391,13 +403,16 @@ async function attemptPlaceOrder(
         );
         store.write(doc);
       });
-      ledger.append({
+      await ledger.append({
         event: 'execution_dry_run_blocked',
         timestamp: new Date().toISOString(),
         payload: {
           blocked_by: 'polymarketClient.placeOrder',
           expects: 'dry-run',
           correlation_id: lifecycle.correlationId,
+          attempt: lifecycle.attempt,
+          started_at: execStarted.toISOString(),
+          finished_at: new Date().toISOString(),
         },
       });
       return 'dry_run_blocked';
@@ -423,22 +438,22 @@ async function attemptPlaceOrder(
             { store, client: opts.client, maker: opts.signer.address },
             lifecycle.correlationId,
           );
-          if (resolved) {
-            ledger.append({
-              event: 'order_reconciled_on_ambiguity',
+            if (resolved) {
+              await ledger.append({
+                event: 'order_reconciled_on_ambiguity',
+                timestamp: new Date().toISOString(),
+                payload: { ...resolved },
+              });
+            }
+          } catch (reconcileErr) {
+            await ledger.append({
+              event: 'reconcile_after_ambiguity_error',
               timestamp: new Date().toISOString(),
-              payload: { ...resolved },
+              payload: {
+                correlation_id: lifecycle.correlationId,
+                error: reconcileErr instanceof Error ? reconcileErr.message.slice(0, 300) : String(reconcileErr),
+              },
             });
-          }
-        } catch (reconcileErr) {
-          ledger.append({
-            event: 'reconcile_after_ambiguity_error',
-            timestamp: new Date().toISOString(),
-            payload: {
-              correlation_id: lifecycle.correlationId,
-              error: reconcileErr instanceof Error ? reconcileErr.message.slice(0, 300) : String(reconcileErr),
-            },
-          });
         }
       }
     } else {
@@ -451,10 +466,16 @@ async function attemptPlaceOrder(
         store.write(doc);
       });
     }
-    ledger.append({
+    await ledger.append({
       event: 'execution_error',
       timestamp: new Date().toISOString(),
-      payload: { error: message.slice(0, 500), correlation_id: lifecycle.correlationId },
+      payload: {
+        error: message.slice(0, 500),
+        correlation_id: lifecycle.correlationId,
+        attempt: lifecycle.attempt,
+        started_at: execStarted.toISOString(),
+        finished_at: new Date().toISOString(),
+      },
     });
     return 'execution_error';
   }
@@ -500,9 +521,19 @@ async function main(): Promise<void> {
   const ledgerPath = '.pallas/ledger.json';
   mkdirSync('.pallas', { recursive: true });
 
+  // PALLAS-M16 : clé publique de vérification du checkpoint .sig (si fournie,
+  // le démarrage EXIGE un ledger signé). Contenu PEM SPKI ou chemin de fichier.
+  let ledgerPublicKey: string | undefined;
+  const pubKeyEnv = process.env.PALLAS_LEDGER_PUB_KEY ?? '';
+  if (pubKeyEnv.length > 0) {
+    ledgerPublicKey = pubKeyEnv.includes('-----BEGIN PUBLIC KEY-----')
+      ? pubKeyEnv
+      : readFileSync(pubKeyEnv, 'utf8').trim();
+  }
+
   const client = new PolymarketClient();
   const strategy = new ReferenceStrategy({ tokenIds, buyThreshold: threshold, size });
-  const ledger = FileLedger.load(ledgerPath);
+  const ledger = FileLedger.load(ledgerPath, { publicKeyPem: ledgerPublicKey });
   const store = new DurableStateStore(statePath);
   const signer =
     pkHex.length > 0
@@ -519,13 +550,13 @@ async function main(): Promise<void> {
   const killStart = Date.now();
   try {
     const record = await enforceKillSwitch(store, client);
-    ledger.append({
+    await ledger.append({
       event: 'kill_switch_sync',
       timestamp: new Date().toISOString(),
       payload: { ...record, elapsed_ms: Date.now() - killStart },
     });
   } catch (err) {
-    ledger.append({
+    await ledger.append({
       event: 'kill_switch_sync',
       timestamp: new Date().toISOString(),
       payload: {
@@ -544,12 +575,13 @@ async function main(): Promise<void> {
       threshold,
       size,
       riskConfig,
+      ledger: { entries: ledger.length, signed: ledger.isSigned, verified: true },
       signer: signer ? signer.address : 'ephemeral(forme)',
     }),
   );
 
   for (let c = 1; c <= cycles; c += 1) {
-    ledger.append({ event: 'cycle_start', timestamp: new Date().toISOString(), payload: { cycle: c } });
+    await ledger.append({ event: 'cycle_start', timestamp: new Date().toISOString(), payload: { cycle: c } });
     const result = await runReferenceCycle(c, {
       client,
       strategy,
@@ -562,13 +594,14 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(result));
   }
 
-  const diskLedger = FileLedger.load(ledgerPath);
+  const diskLedger = FileLedger.load(ledgerPath, { publicKeyPem: ledgerPublicKey });
   const verdict = diskLedger.verify();
   const durableCheck = store.read().version;
   console.log(
     JSON.stringify({
       event: 'run_end',
       ledger_entries: diskLedger.length,
+      ledger_signed: diskLedger.isSigned,
       ledger_verify: verdict,
       state_version: durableCheck,
     }),
