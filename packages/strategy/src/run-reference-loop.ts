@@ -111,6 +111,7 @@ export class CrashSimulationError extends Error {
  * au moment de la décision (garde stale-price).
  */
 export function buildReferenceTradeRequest(signal: ReferenceSignal, marketDataAgeMs: number): TradeRequest {
+  warnKellyIllustrative();
   const estValue = Math.round(signal.price * signal.size * 100) / 100;
   const marketImpliedP = clamp01(signal.price);
   return {
@@ -119,6 +120,17 @@ export function buildReferenceTradeRequest(signal: ReferenceSignal, marketDataAg
     price: signal.price,
     quantity: signal.size,
     est_value_usd: estValue,
+    // ⚠  PALLAS-M18 — VALEURS ILLUSTRATIVES, AUCUNE CALIBRATION STATISTIQUE.
+    //
+    // `win_probability = signal.price` (prix du marché) et `odds = 2.0` (valeur
+    // arbitraire) ne produisent PAS une estimation prédictive de la probabilité de
+    // gain. Le couple est fixe, constant, et n'est assorti d'aucun backtest,
+    // aucune validation out-of-sample, aucun edge estimé.
+    //
+    // Ces valeurs existent UNIQUEMENT pour faire tourner le pipeline technique
+    // (risk engine → Kelly → size suggestion) de bout en bout en dry-run.
+    // La stratégie de référence est non-prédictive par conception (docs/STRATEGY.md).
+    // Toute tentative de les interpréter comme un signal de trading est une erreur.
     win_probability: marketImpliedP,
     odds: 2.0,
     confidence: 0.5,
@@ -128,6 +140,41 @@ export function buildReferenceTradeRequest(signal: ReferenceSignal, marketDataAg
 
 function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
+}
+
+// PALLAS-M18 — avertissement de log émis UNE FOIS à la première construction
+// d'un TradeRequest : jamais de calibration statistique derrière les paramètres
+// Kelly de la stratégie de référence (voir le commentaire dans
+// `buildReferenceTradeRequest`). Visible directement dans les logs du pipeline,
+// sans avoir à ouvrir un autre fichier.
+let kellyIllustrativeLog = false;
+function warnKellyIllustrative(): void {
+  if (kellyIllustrativeLog) return;
+  kellyIllustrativeLog = true;
+  console.warn(
+    '[PALLAS-M18] STRATEGIE DE REFERENCE : win_probability=price et odds=2.0 sont des valeurs ' +
+      'ILLUSTRATIVES (aucun backtest, aucune calibration statistique). La taille suggeree par le ' +
+      "score Kelly ne porte AUCUNE information predictive - ne pas l'interpreter comme un edge.",
+  );
+}
+
+/**
+ * PALLAS-M18 — taille d'ordre EFFECTIVEMENT appliquée.
+ *
+ * Le risk engine suggère `suggestedSizeUsd` en DOLLARS, le signal porte une
+ * taille en PARTS. La propriété exigible est « notional transmis ≤ min(notional
+ * demandé, taille autorisée) » : on plafonne donc dans l'espace USD —
+ * `appliedNotional = min(price × size, suggestedSizeUsd)`, puis parts =
+ * appliedNotional/price. Jamais au-dessus de la taille demandée. Défense en
+ * profondeur : même si le gate KELLY_LIMIT (M09) laissait un écart passer,
+ * c'est la taille plafonnée qui est construite et signée — pas le signal brut.
+ */
+export function appliedOrderSize(price: number, size: number, suggestedSizeUsd: number): number {
+  if (!(price > 0)) return size;
+  const demandNotional = price * size;
+  const appliedNotional = Math.min(demandNotional, Math.max(0, suggestedSizeUsd));
+  const appliedShares = appliedNotional / price;
+  return Math.min(size, appliedShares);
 }
 
 /**
@@ -315,8 +362,13 @@ export async function runReferenceCycle(
     throw new CrashSimulationError('submitting_written');
   }
 
+  // PALLAS-M18 : l'orchestrateur APPLIQUE la taille suggérée, il ne la vérifie
+  // pas seulement. Le payload signé est construit sur `appliedSize`, jamais sur
+  // la taille brute du signal — indépendamment du gate KELLY_LIMIT (M09).
+  const appliedSize = appliedOrderSize(trade.price, trade.quantity, outcome.decision.suggested_size_usd);
+
   // --- étape 4 : exécution (dry-run strict) ---
-  const execution = await attemptPlaceOrder(opts, signal, trade, lifecycle, ledger, store);
+  const execution = await attemptPlaceOrder(opts, signal, trade, lifecycle, ledger, store, appliedSize);
   return {
     cycle,
     signal,
@@ -343,19 +395,21 @@ async function attemptPlaceOrder(
   lifecycle: { correlationId: string; attempt: number },
   ledger: FileLedger,
   store: DurableStateStore,
+  appliedSize: number,
 ): Promise<CycleResult['execution']> {
   const signer = opts.signer ?? ephemeralSigner();
   const execStarted = new Date();
   try {
+    // PALLAS-M18 : le payload signé porte `appliedSize`, pas signal.size.
     const signed = buildSignedOrderPayload(
-      { tokenId: BigInt(signal.tokenId), side: signal.side, price: signal.price, size: signal.size },
+      { tokenId: BigInt(signal.tokenId), side: signal.side, price: signal.price, size: appliedSize },
       signer.address,
       signer.privKey,
     );
     const params: OrderParams = {
       marketId: signal.tokenId,
       price: signal.price,
-      size: signal.size,
+      size: appliedSize,
       side: signal.side,
       tokenId: signal.tokenId,
     };
@@ -385,6 +439,10 @@ async function attemptPlaceOrder(
         attempt: lifecycle.attempt,
         started_at: execStarted.toISOString(),
         finished_at: new Date().toISOString(),
+        // PALLAS-M18 : la taille EFFECTIVEMENT transmise et signée (peut être
+        // < signal.size si le plafond suggested_size_usd la contraignait).
+        applied_size: appliedSize,
+        demanded_size: signal.size,
       },
     });
     return 'execution_success';

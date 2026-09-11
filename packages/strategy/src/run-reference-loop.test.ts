@@ -7,7 +7,7 @@ import { PolymarketClient } from '@pallas/execution';
 import { FileLedger } from '@pallas/ledger';
 
 import { ReferenceStrategy } from './reference.js';
-import { runReferenceCycle } from './run-reference-loop.js';
+import { appliedOrderSize, runReferenceCycle } from './run-reference-loop.js';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -164,4 +164,68 @@ test('M16: schéma d événement enrichi — correlation_id, intent_hash, timest
   const doc = store.read();
   const lifecycle = doc.orders.find((o) => o.status === 'DECIDED');
   expect(lifecycle?.intent_hash).toBe(riskDecision.payload.intent_hash);
+});
+
+// ------------------ PALLAS-M18 — honnêteté statistique ------------------
+
+test('appliedOrderSize : notional transmis ≤ suggested_size_usd (def en profondeur)', () => {
+  // pas de cap si demand <= suggested
+  expect(appliedOrderSize(0.5, 10, 25)).toBe(10);
+  expect(appliedOrderSize(0.5, 10, 5)).toBe(10); // 5 USD exact = demand
+  // cap quand demand > suggested
+  expect(appliedOrderSize(0.5, 10, 1)).toBe(2);   // 1 USD / 0.5 = 2 parts
+  expect(appliedOrderSize(0.42, 20, 5)).toBeCloseTo(5 / 0.42, 10);
+  // suggested 0 -> 0 parts (fail-closed silencieux, pas d émission)
+  expect(appliedOrderSize(0.5, 10, 0)).toBe(0);
+  // price <= 0 : pas de div, retourne taille demandée (defensif)
+  expect(appliedOrderSize(0, 10, 5)).toBe(10);
+});
+
+test('PALLAS-M18: la taille transmise est plafonnée par suggested_size_usd, pas la taille brute du signal', async () => {
+  // Signal : price 0.5, size 10 → demand notional 5.0 USD
+  // Fake risk : allowed=true, suggested_size_usd=1 → cap bite = 1/0.5 = 2 parts.
+  const DECISION_CAP =
+    '{"decision":{"allowed":true,"gates":[],"rejected_by":[],"suggested_size_usd":1},"state":' +
+    VALID_STATE_JSON + '}';
+
+  class CapturingClient extends PolymarketClient {
+    captured?: Parameters<PolymarketClient['placeOrder']>[0];
+    async placeOrder(params: Parameters<PolymarketClient['placeOrder']>[0]): Promise<never> {
+      this.captured = params;
+      throw new Error('M18 capture');
+    }
+  }
+
+  const dir = tempLedgerDir();
+  const book = {
+    bids: [{ price: '0.40', size: '100' }] as Array<{ price: string; size: string }>,
+    asks: [{ price: '0.50', size: '50' }] as Array<{ price: string; size: string }>,
+  };
+  const client = new CapturingClient({
+    isDryRun: () => true,  // getOrderbook marche, placeOrder intercepte
+    fetcher: async (_input: string | URL | Request) => {
+      const url = String(_input);
+      if (url.includes('/book')) return new Response(JSON.stringify(book), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response('{}', { status: 404 });
+    },
+  });
+  vi.stubEnv('PALLAS_RISK_BIN', fakeRiskBinary(DECISION_CAP));
+
+  const ledger = FileLedger.load(join(dir, 'ledger.json'));
+  const result = await runReferenceCycle(1, {
+    client,
+    strategy: new ReferenceStrategy({ tokenIds: [TOKEN], buyThreshold: 0.6, size: 10 }),
+    ledger,
+    statePath: join(dir, 'risk-state.json'),
+    riskConfig: TEST_RISK_CONFIG,
+  });
+
+  expect(result.signal).not.toBeNull();
+  expect(result.signal!.size).toBe(10);        // signal demande 10 parts
+  expect(result.allowed).toBe(true);
+
+  // la taille transmise au signataire est 2, pas 10
+  expect(client.captured).toBeDefined();
+  expect(client.captured!.size).toBe(2);
+  expect(result.execution).toBe('execution_error'); // subclass threw "M18 capture"
 });

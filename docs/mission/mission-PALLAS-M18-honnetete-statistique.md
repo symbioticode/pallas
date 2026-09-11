@@ -5,7 +5,7 @@ Mission ID : PALLAS-M18
 Date de création : 2026-09-10
 Auteur / Agent : Claude (planification) — exécution par agent de code au choix
 Projet : Pallas
-Statut : ACTIF — 🟡 Moyenne (cohérence interne, pas une vulnérabilité active grâce au gate M09)
+Statut : CLOTURÉE (2026-09-11) — preuve dans `mission-PALLAS-M18-journal.md`. 🟡 Moyenne (cohérence interne, pas une vulnérabilité active grâce au gate M09)
 Source de vérité : `AUDIT-PALLAS-v0.3.md` (F-08, section 5.2) + `packages/strategy/src/run-reference-loop.ts`
 + `docs/STRATEGY.md` (issu de PALLAS-M12)
 
@@ -81,11 +81,11 @@ lisant seulement ce fichier.
 2. Tester la propriété indépendamment du gate `KELLY_LIMIT`, en défense en profondeur.
 
 ## 7. Critères de succès
-- [ ] La taille d'ordre effectivement construite et signée est `min(taille du signal,
+- [x] La taille d'ordre effectivement construite et signée est `min(taille du signal,
       decision.suggested_size_usd)`, jamais la taille brute du signal, testé.
-- [ ] Un commentaire et un avertissement de log explicites rappellent la nature non-calibrée de
+- [x] Un commentaire et un avertissement de log explicites rappellent la nature non-calibrée de
       `win_probability`/`odds` au point exact de leur définition dans le code.
-- [ ] Aucune régression sur les tests existants.
+- [x] Aucune régression sur les tests existants.
 
 ## 8. Interdictions
 - Ne pas modifier `docs/STRATEGY.md` pour suggérer une quelconque amélioration de la valeur
