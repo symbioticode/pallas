@@ -70,7 +70,7 @@ mod tests {
     fn negative_ev_zero() {
         // p=0.4, b=0.5 -> expected = 0.4*1.5 - 1 = -0.4 < 0
         let r = kelly_fraction(0.4, 0.5, 1000.0, 1.0);
-        assert_eq!(r.positive_ev, false);
+        assert!(!r.positive_ev);
         assert_eq!(r.full_kelly, 0.0);
         assert_eq!(r.recommended_size, 0.0);
     }

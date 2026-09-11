@@ -170,7 +170,7 @@ mod tests {
         let s = d.detect();
         assert_eq!(s.regime, Regime::Normal);
         assert_eq!(s.size_multiplier, 1.0);
-        assert_eq!(s.should_halt, false);
+        assert!(!s.should_halt);
     }
 
     #[test]
@@ -219,7 +219,7 @@ mod tests {
             d.add(-0.5);
         }
         let s = d.detect();
-        assert_eq!(s.should_halt, true, "regime = {:?}", s.regime);
+        assert!(s.should_halt, "regime = {:?}", s.regime);
         assert_eq!(s.regime, Regime::Extreme);
     }
 

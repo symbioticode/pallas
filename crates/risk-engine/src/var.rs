@@ -27,7 +27,7 @@ pub fn var_historical(pnls: &[f64], confidence: f64) -> f64 {
     let mut sorted = pnls.to_vec();
     sorted.sort_by(|a, b| a.total_cmp(b));
     let idx = ((1.0 - confidence) * sorted.len() as f64).floor() as usize;
-    let idx = idx.max(0).min(sorted.len() - 1);
+    let idx = idx.min(sorted.len() - 1);
     let loss = sorted[idx];
     if loss >= 0.0 {
         0.0
@@ -61,7 +61,7 @@ fn norm_inv(p: f64) -> f64 {
         -3.969683028665376e1,
         2.209460984245205e2,
         -2.759285104469687e2,
-        1.383577518672690e2,
+        1.38357751867269e2,
         -3.066479806614716e1,
         2.506628277459239e0,
     ];
@@ -94,18 +94,18 @@ fn norm_inv(p: f64) -> f64 {
         let q = (-2.0 * p.ln()).sqrt();
         let num = horner(&c, q);
         let den = horner(&d, q) + 1.0;
-        return num / den;
+        num / den
     } else if p <= p_high {
         let q = p - 0.5;
         let r = q * q;
         let num = q * horner(&a, r);
         let den = horner(&b, r) + 1.0;
-        return num / den;
+        num / den
     } else {
         let q = (-2.0 * (1.0 - p).ln()).sqrt();
         let num = horner(&c, q);
         let den = horner(&d, q) + 1.0;
-        return -(num / den);
+        -(num / den)
     }
 }
 

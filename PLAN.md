@@ -31,7 +31,7 @@
 > | `PALLAS-M08` | Wire CLOB V2 « `taker` » — comparaison test officiel (prémisse RÉFUTÉE : l'audit citait des repos **V1**, aucun client V2 n'émet `taker`) | ✅ clôturée 2026-09-10 |
 > | `PALLAS-M09` | Risk : cohérence `est_value_usd` ~ `price×quantity` + Kelly réellement contraignant | ✅ clôturée 2026-09-10 |
 > | `PALLAS-M10` | Frontières résiduelles : `OrderMismatchError`, `PALLAS_RISK_BIN`, `deriveApiKey`, `isDryRun` | ✅ clôturée 2026-09-10 |
-> | `PALLAS-M11` | CI réelle documentée + `PLAN.md` propre | ⏳ à faire |
+> | `PALLAS-M11` | CI réelle documentée + `PLAN.md` propre | ✅ clôturée 2026-09-10 |
 
 > **Decision technique clé (Rust via Nix, pas NAPI-RS)**
 > Le risk engine est critique (decide si un trade est execute) : on le veut en Rust pour la surete memoire
@@ -138,27 +138,33 @@ pallas/
 
 - [x] Structure monorepo + workspaces npm + tsconfig strict
 - [x] Toolchain Rust via Nix (profile `cargo`+`rustc` + `shell.nix` pour le linker gcc)
-- [x] Risk engine Rust CLI + tests — **CLI et 37 tests verts confirmes, couverture 92,17% confirmee
-      (objectif 90%+ atteint globalement, pas module par module : main.rs 77%, volatility.rs 87%).
-      Protection live operationnelle : validation stricte des entrees, kill switch reel, etat
-      persistant (circuit breaker, volatilite) transporte entre appels, machine a etats
-      Open→HalfOpen→Closed, NaN traite — 50 tests Rust verts, voir PALLAS-M01, cloturee le 2026-09-09.
-      Note additive PALLAS-M09 (cloturee 2026-09-10, ne rouvre PAS M01 — ecarts distincts decouverts par
-      l'audit v0.2) : coherence METIER inter-champs fermee — gate `VALUE_CONSISTENCY`
-      (`est_value_usd` ~ `price×quantity`, tolerance max(1¢, 1%) justifiee en commentaire) et
-      `KELLY_LIMIT` desormais CONTRAIGNANT sur la taille suggeree finale (`recommended_size` ×
-      multiplicateur de volatilite, plafonne `max_order_usd`) avec marge centime, plus seulement la
-      bankroll. 54 tests Rust verts, dont `audit_v0_2_rejects_*` reproduisant les 2 probes v0.2
-      (baseline "acceptees" pre-correctif capturee au journal M09).**
+- [x] Risk engine Rust CLI + tests — **état courant (2026-09-10) : 54 tests Rust verts
+      (39 unitaires + 12 intégration CLI + 3 proptest), couverture 95,92 % lignes (audit v0.2 §1.3).
+      Protection live opérationnelle : validation stricte des entrées, kill switch réel, état
+      persistant (circuit breaker, volatilité) transporté entre appels, machine à états
+      Open→HalfOpen→Closed, NaN traité — PALLAS-M01, clôturée 2026-09-09.
+      PALLAS-M09 (clôturée 2026-09-10, ne rouvre PAS M01 — écarts distincts découverts par l'audit
+      v0.2) : cohérence METIER inter-champs — gate `VALUE_CONSISTENCY`
+      (`est_value_usd` ~ `price×quantity`, tolérance max(1¢, 1 %) justifiée en commentaire) et
+      `KELLY_LIMIT` désormais CONTRAIGNANT sur la taille suggérée finale (`recommended_size` ×
+      multiplicateur de volatilité, plafonné `max_order_usd`) avec marge centime. Tests
+      `audit_v0_2_rejects_*` reproduisant les 2 probes v0.2 (baseline « acceptées » pré-correctif
+      capturée au journal M09). PALLAS-M11 (2026-09-10) : `cargo clippy --all-targets
+      --all-features -- -D warnings` propre (7 lints corrigés, clippy ajouté au shell.nix).
+      (`37 tests/92,17 %` et `50 tests` cités précédemment sont des états HISTORIQUES — voir
+      « État audité » ci-dessous.)**
 - [x] Facade TS `@pallas/risk` qui appelle la CLI (contrat JSON stdin/stdout) — **fail-closed sur
       process/exit non-zero confirme ; depuis PALLAS-M04 (cloturee le 2026-09-09) la reponse JSON est
       VALIDEE a l'execution contre des schemas Zod du contrat reel (types.rs — serde snake_case) :
       tout ecart (champ manquant, type faux) leve `RiskEngineError` explicite, plus jamais de cast
       aveugle `as T`.**
-- [ ] CI : npm + cargo, passe du premier coup — **`.github/workflows/` ne contient qu'un `.gitkeep`,
-      aucune pipeline — voir PALLAS-M06.**
+- [x] CI : npm + cargo, passe du premier coup — **pipeline `.github/workflows/ci.yml` réelle
+      (2 jobs TS/Rust reposés sur le shell Nix), runs VERTs réels observés sur GitHub Actions au
+      2026-09-10 (M06 annexe + chaque mission M07→M10 ; liens dans
+      `docs/mission/mission-PALLAS-M11-journal.md`).**
 
-**Etat verifie (audit 2026-09-09) :** `npm install && npm run build` OK. `npm test` **ROUGE** :
+**Etat verifie (audit 2026-09-09) — HISTORIQUE, remplacé par l'état courant ci-dessus :**
+`npm install && npm run build` OK. `npm test` **ROUGE** :
 9 fichiers, 66 tests, **64 reussis / 2 echoues** (sandbox bwrap — voir PALLAS-M03). Rust : 37/37 verts
 (28 unitaires + 6 integration CLI + 3 property tests).
 
@@ -225,7 +231,8 @@ Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a tr
       pas seulement `existsSync` ; un dossier ou un lien detourne est rejete (test dedie).
 - [x] Portee filesystem documentee (code + `docs/SECURITY.md`) : `--ro-bind / /` protege l'ECRITURE,
       PAS la confidentialite — le processus sandboxe peut lire ce que son utilisateur peut lire.
-- Tests sandbox : **9/9 verts**. Suite TS : **84/84** (9 fichiers).
+- Tests sandbox : **9/9 verts**. Suite TS : **113/113** (9 fichiers, état 2026-09-10 ;
+  le compteur 84/84 daté du 2026-09-09 est obsolète).
 
 ### 1.4 Input sanitizer (FAIT, mais isole)
 - [x] Copie du sanitizer CloddsBot (homoglyphes, zero-width, prompt injection)
@@ -251,7 +258,7 @@ Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a tr
 - [x] Mapping CLOB — **validation runtime stricte via schemas Zod (`clobSchema.ts`) : `best_bid`
       non numerique, `clob_token_ids` absent, bucket d'orders malforme ⇒ `ClobValidationError`
       explicite, plus JAMAIS de `Number(undefined)`→NaN silencieux.**
-- [x] Tests : 20 verts (`polymarketClient.test.ts`)
+- [x] Tests : 26 verts (`polymarketClient.test.ts`, état 2026-09-10)
 
 ### 2.2 Credentials Polymarket
 - [x] Stockage chiffre via `polymarketSecrets` (AES-256-GCM, fail-closed) — 8 tests
@@ -276,8 +283,8 @@ Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a tr
 - [x] `pretest` = `tsc --build`
 - [x] `typecheck` = `tsc --build --dry` (note : mode "dry" moins robuste qu'un vrai `tsc --noEmit`
       sur un arbre deja a jour — a surveiller)
-- [x] Migration vitest — **compte de tests obsolete dans les sessions precedentes (47→66) ; suite
-      actuellement rouge (2 echecs) — voir Phase 0.**
+- [x] Migration vitest — **effective ; suite VERTE 113/113 (9 fichiers) depuis PALLAS-M07 (les 2
+      échecs sandbox de l'audit v0.1 corrigés : sonde `realBwrap` + skip explicite).**
 
 ---
 
@@ -301,11 +308,15 @@ Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a tr
 
 ## Phase 5 — CI/CD + Documentation (FAIT — PALLAS-M06 clôturée le 2026-09-09)
 
-- [x] CI Pipeline — `.github/workflows/ci.yml` : job TS (`npm ci`, `npm run build`, `npm run
-      typecheck`, `npm test`, `npm audit --audit-level=high`) + job Rust (`cargo test`, toolchain
-      stable directe — crate 100% Rust pur, pas de nix en CI). Test d'échec volontaire du pipeline
-      prouvé (voir journal M06). Seuil audit `high` justifié (2 modérées `@vitest/mocker`
-      dev-only, non exploitable en CI ; Vitest 5 = piste future).
+- [x] CI Pipeline — **`.github/workflows/ci.yml` : 2 jobs reposés sur le shell Nix épinglé
+      (`nix-installer-action@v23` + `magic-nix-cache-action@v15`) — décision annexe M06
+      (`actions-rust-lang/audit@v2` inexistante ⇒ `cargo audit` dans le shell). Job TS : compile
+      d'abord le binaire risk-engine (runner séparé du job rust), puis `npm ci`, `npm run build`,
+      `npm run typecheck`, `npm test`, `npm audit --audit-level=high`. Job Rust : `cargo test` +
+      `cargo audit` via Nix. Test d'échec volontaire du pipeline prouvé (commit `3429c8f`, remplacé
+      par le fix `a07c9a8`). Runs VERTs réels observés au 2026-09-10 (M06 annexe + M07→M10 ; liens
+      dans `docs/mission/mission-PALLAS-M11-journal.md`). Seuil audit `high` justifié (2 modérées
+      `@vitest/mocker` dev-only, non exploitable en CI ; Vitest 5 = piste future).**
 - [x] Documentation sobre : `README.md` (état réel, pas de badges), `docs/ARCHITECTURE.md` (modules
       vides marqués « non commencé »), `docs/SECURITY.md` (reporting + protections + limites),
       `docs/TRADING.md` (timeout/AmbiguousOrderError + réconciliation) — tous sous git et liés à

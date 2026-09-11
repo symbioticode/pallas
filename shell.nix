@@ -1,6 +1,9 @@
 # Dev shell Nix pour Pallas — source de vérité du dev LOCAL et de la CI.
-# Fournit Node 22, la toolchain Rust + linker C (gcc), bubblewrap (sandbox
-# d'isolation réseau) et cargo-audit (scan RustSec).
+# Fournit Node 22, la toolchain Rust + linker C (gcc), clippy (lints),
+# bubblewrap (sandbox d'isolation réseau) et cargo-audit (scan RustSec).
+# Clippy ajouté au 2026-09-10 (PALLAS-M11) : dette d'outillage signalée par
+# l'audit v0.1 et toujours absente à v0.2. cargo clippy tourne via ce shell :
+#   nix-shell --run "cd crates/risk-engine && cargo clippy --all-targets --all-features -- -D warnings"
 #
 # nixpkgs est ÉPINGLÉ à une révision git fixe : le même environnement est
 # reproductible hors du NixOS de dev (runner CI) — see mission-PALLAS-M06,
@@ -25,6 +28,7 @@ pkgs.mkShell {
     nodejs_22
     rustc
     cargo
+    clippy
     gcc
     binutils
     pkg-config
@@ -43,6 +47,7 @@ pkgs.mkShell {
     echo ""
     echo "  Commandes :"
     echo "    cargo test            → tests du risk engine"
+    echo "    cargo clippy          → lints (avec -- -D warnings)"
     echo "    cargo audit           → scan dépendances RustSec"
     echo "    cargo build --release → binaire risk-engine"
     echo "    npm ci && npm test"

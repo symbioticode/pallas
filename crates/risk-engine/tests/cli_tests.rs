@@ -137,7 +137,7 @@ fn decision_and_kelly_agree_on_positive_ev() {
 fn var_historical_bounded() {
     let pnls = vec![-5.0, -8.0, -2.0, -12.0, -1.0];
     let v = var_historical(&pnls, 0.95);
-    assert!(v >= 0.0 && v <= 15.0);
+    assert!((0.0..=15.0).contains(&v));
 }
 
 #[test]
@@ -160,7 +160,7 @@ fn full_pipeline_integrates() {
         max_drawdown_usd: 8_000.0,
     };
     let d = validate_trade(&req, &state);
-    assert_eq!(d.allowed, true);
+    assert!(d.allowed);
 }
 
 // --- M01 : etat persistant transporte entre appels CLI ---
@@ -190,7 +190,7 @@ fn cli_record_updates_breaker_state() {
     });
     let out = run_cli(&input.to_string());
     assert_eq!(out["state"]["circuit_breaker"]["consecutive_losses"], 1);
-    assert!(out["state"]["volatility"]["window"].as_array().unwrap().len() >= 1);
+    assert!(out["state"]["volatility"]["window"].as_array().is_some_and(|w| !w.is_empty()));
     // un second record avec etat transporte cumule la perte consecutive.
     let carried = out["state"].clone();
     let input2 = serde_json::json!({ "command": "record", "state": carried, "pnl": -50.0 });

@@ -423,7 +423,8 @@ mod tests {
 
     #[test]
     fn input_validation_rejects_each_bound() {
-        let cases: Vec<(&'static str, Box<dyn Fn(&mut TradeRequest)>)> = vec![
+        type TradeBoundMutator = Box<dyn Fn(&mut TradeRequest)>;
+        let cases: Vec<(&'static str, TradeBoundMutator)> = vec![
             ("market_id", Box::new(|r| r.market_id = String::new())),
             ("side", Box::new(|r| r.side = "SELL".to_string())),
             ("price", Box::new(|r| r.price = 1.5)),
