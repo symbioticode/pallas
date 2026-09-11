@@ -69,10 +69,13 @@ et `rust`) :
 | `60b392f` | M10 | ✅ success |
 | `c35f749` | M09 | ✅ success |
 | `ad526ba` | M08 | ✅ success |
+| `f41f27d` | M11 | ✅ success — run `34546692362` (jobs `typescript` + `rust`) |
 
-Lien type (job TS, run M08) : `https://github.com/andrei/pallas/actions/runs/<id-m08>` — la
-vérification reposant sur l'onglet Actions du dépôt (état `success` constaté directement, pas
-reproduit ici). La stratégie sandbox demandée par la mission : **aucune exclusion nécessaire** —
+Lien : onglet Actions du dépôt `github.com/symbioticode/pallas` (état `success` constaté sur les deux
+jobs via `gh run view` — la seule alerte visible dans le log, « Unable to authenticate to
+FlakeHub », émane du post-step `magic-nix-cache-action` et est **non bloquante** : elle ne concerne
+que l'upload du cache dans le store public Determinate Systems, pas l'exécution des jobs, qui
+tournent et sortent verts). La stratégie sandbox demandée par la mission : **aucune exclusion nécessaire** —
 l'échec hôte-dépendant de l'audit v0.1/§1 a été corrigé en M03/M07 (sonde `realBwrap` +
 `server.listen` + skip explicite) ; les tests sandbox passent tels quels sur le runner standard.
 
