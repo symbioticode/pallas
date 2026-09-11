@@ -1,0 +1,31 @@
+{
+  "name": "@pallas/strategy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --reporter=verbose",
+    "test:watch": "vitest",
+    "reference-loop": "dist/../src/run-reference-loop.js"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.9.7",
+    "@pallas/core": "*",
+    "@pallas/execution": "*",
+    "@pallas/ledger": "*",
+    "@pallas/risk": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.1.1"
+  }
+}

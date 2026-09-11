@@ -32,6 +32,7 @@
 > | `PALLAS-M09` | Risk : cohérence `est_value_usd` ~ `price×quantity` + Kelly réellement contraignant | ✅ clôturée 2026-09-10 |
 > | `PALLAS-M10` | Frontières résiduelles : `OrderMismatchError`, `PALLAS_RISK_BIN`, `deriveApiKey`, `isDryRun` | ✅ clôturée 2026-09-10 |
 > | `PALLAS-M11` | CI réelle documentée + `PLAN.md` propre | ✅ clôturée 2026-09-10 |
+> | `PALLAS-M12` | Stratégie de référence : intégration bout-en-bout dry-run (ledger chaîné, orchestrateur, reads réels) | ✅ clôturée 2026-09-10 |
 
 > **Decision technique clé (Rust via Nix, pas NAPI-RS)**
 > Le risk engine est critique (decide si un trade est execute) : on le veut en Rust pour la surete memoire
@@ -288,18 +289,31 @@ Tests presents et verts (liste inchangee, voir commit). Reserves de l'audit a tr
 
 ---
 
-## Phase 3 — Gateway + Agent + Ledger (S5-S7) — INCHANGE, NON COMMENCE
+## Phase 3 — Gateway + Agent + Ledger (S5-S7) — INCHANGE
 
-- [ ] Serveur Fastify, port configurable
-- [ ] Auth (API key ou JWT)
-- [ ] Rate limiting IP
-- [ ] Health endpoint
-- [ ] WebChat UI
-- [ ] Connection Claude API
-- [ ] Tool definitions (trade, read, search)
-- [ ] Input sanitizer avant chaque tool call
-- [ ] Order via `@pallas/execution` (dry-run garde jusqu'a confirmation "LIVE")
-- [ ] Trade ledger (hash SHA-256, calibration confiance/precision, export)
+### 3.1 Ledger + Stratégie de référence — INTÉGRATION PARTIELLE (PALLAS-M12 clôturée le 2026-09-10)
+
+- [x] `@pallas/ledger` : ledger append-only en chaîne SHA-256 (`hash_n = SHA256(prev_hash + contenu_n)`),
+      `verify()` réel (détection de falsification testée : modification d'un enregistrement intermédiaire
+      ⇒ `brokenAt`), persistance fichier JSON atomique — **limite DÉLIBÉRÉE (pas de base de données,
+      mission §6.4)** ; 8 tests.
+- [x] `ReferenceStrategy` (`@pallas/strategy`) — **explicitement NON PRÉDICTIVE** (disclaimer en tête
+      de fichier, aucun paramètre optimisé) : BUY quand best ask < seuil fixe, understand `docs/STRATEGY.md`.
+- [x] Intégration bout-en-bout **dry-run** (`run-reference-loop.ts`) : signal → sanitizeInput (texte
+      externe, menaces journalisées) → `validateTradeWithState` (état persistant `.pallas/risk-state.json`
+      entre exécutions) → décision → si acceptée : payload signé « pour la forme » puis `placeOrder`
+      **bloqué en dry-run** (jamais de mécanisme live, `signatureSchemaValidated` jamais touché),
+      ledger écrit à chaque étape. Aucun retry après exécution/rejet ; un seul appel à `placeOrder`.
+- [x] **Prouvé manuellement sur de vrais reads Polymarket** (PALLAS-M12 §4) : 3 cycles réels (book réel
+      → signal → allow → dry-run blocked), scénario de rejet (limite de config abaissée ⇒ `POSITION_LIMIT`,
+      ledger enregistre `rejected_by`, aucun appel ordre), falsification manuelle d'un enregistrement
+      détectée (`brokenAt`), état risk reconstruit sur 2 exécutions séparées. Tests automatisés écrits
+      APRÈS ces runs manuels (11 tests strategy-orchestrateur sur fetcher mock).
+- [ ] **Ancrage on-chain du ledger — HORS SCOPE (mission §6)** : à reconsidérer avec une vraie
+      persistance durable (base / IPFS / contrats) en Phase 3.
+- [ ] Gateway (serveur Fastify, auth, rate limiting, health) — NON COMMENCÉ
+- [ ] WebChat UI + connexion Claude API + tool definitions — NON COMMENCÉ
+- [ ] Backtesting de la stratégie (hors M12, condition dans `docs/STRATEGY.md`) — NON COMMENCÉ
 
 ## Phase 4 — Skills + Extensibilite (S7-S9) — INCHANGE, NON COMMENCE
 

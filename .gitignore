@@ -7,3 +7,5 @@ target/
 
 # Audit ponctuel du depot (non suivi, reference le HEAD de son epoque)
 docs/AUDIT-PALLAS*.md
+# .pallas (ledger + etat du pipeline, artefact local)
+.pallas/

@@ -9,11 +9,12 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "build": "tsc --build packages/core packages/risk packages/execution",
-    "typecheck": "tsc --build --dry packages/core packages/risk packages/execution",
-    "pretest": "tsc --build packages/core packages/risk packages/execution",
+    "build": "tsc --build packages/core packages/risk packages/execution packages/ledger packages/strategy",
+    "typecheck": "tsc --build --dry packages/core packages/risk packages/execution packages/ledger packages/strategy",
+    "pretest": "tsc --build packages/core packages/risk packages/execution packages/ledger packages/strategy",
     "test": "vitest run --reporter=verbose",
     "test:watch": "vitest",
+    "reference-loop": "node packages/strategy/dist/run-reference-loop.js",
     "dry-run": "node scripts/dry-run.mjs"
   },
   "devDependencies": {
