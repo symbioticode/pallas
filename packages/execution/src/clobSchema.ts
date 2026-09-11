@@ -113,6 +113,42 @@ export const DeriveApiKeyResponseSchema = z
   })
   .passthrough();
 
+/**
+ * Un ordre tel que renvoyé par `GET /data/orders` / `GET /data/order/<id>`
+ * (PALLAS-M14). La forme réelle porte `asset_id` (== token_id) + côté +
+ * price/size + orderID + txnHash + maker/taker. Champs non garantis par le
+ * serveur → tous `.optional()`, jamais de valeur inventée.
+ */
+export const ClobOrderSchema = z
+  .object({
+    asset_id: z.string().min(1),
+    price: DecimalSchema.optional(),
+    size: DecimalSchema.optional(),
+    original_size: DecimalSchema.optional(),
+    side: z.string().optional(),
+    maker: z.string().optional(),
+    taker: z.string().optional(),
+    orderID: z.string().min(1),
+    status: z.string().optional(),
+    txnHash: z.string().optional(),
+  })
+  .passthrough();
+
+/** Enveloppe de `GET /data/orders` (liste paginée, `data[]`). */
+export const OpenOrdersResponseSchema = z
+  .object({
+    data: z.array(ClobOrderSchema),
+  })
+  .passthrough();
+
+/** Reponse de `DELETE /cancel-all` : `{ success: bool, errorMsg? }`. */
+export const CancelAllResponseSchema = z
+  .object({
+    success: z.boolean().optional(),
+    errorMsg: z.string().optional(),
+  })
+  .passthrough();
+
 /** Parse et rejette toute reponse qui ne respecte pas `schema` (fail-closed). */
 export function parseClob<T>(schema: z.ZodType<T>, label: string, data: unknown): T {
   const r = schema.safeParse(data);

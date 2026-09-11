@@ -1,14 +1,16 @@
 # Trading — Pallas — comportement attendu
 
-**Date :** 10 septembre 2026 — état aligné sur le code réel (PALLAS-M01..M10).
+**Date :** 11 septembre 2026 — état aligné sur le code réel (PALLAS-M01..M14).
 Sujet en lien : `packages/execution/src/polymarketClient.ts`, missions `PALLAS-M04`
-(validation runtime + retry + idempotence), `PALLAS-M08` (wire et scope signature).
+(validation runtime + retry + idempotence), `PALLAS-M08` (wire et scope signature),
+`PALLAS-M13` (transaction durable), `PALLAS-M14` (réconciliation des ordres).
 
 ## Scope MVP
 
 - **Polymarket uniquement**, un seul channel (WebChat) prévu — pas encore implémenté.
 - **Dry-run par défaut** : aucune écriture n'est possible tant que le dry-run global est actif.
-  Lectures (markets, orderbook) autorisées. Désactivation = confirmation explicite "LIVE".
+  Lectures (markets, orderbook, **ordres ouverts du maker**) autorisées. Désactivation = confirmation
+  explicite "LIVE".
 - **Résilience réseau :** GETs et `cancelOrder` retentent les erreurs transitoires
   (TypeError, timeout/abort, HTTP 5xx) avec backoff exponentiel (200 ms × 2^n, 2 tentatives).
 
@@ -23,13 +25,41 @@ L'API CLOB Polymarket **n'offre aucune clé d'idempotence** (corps POST `/order`
   ne pas réémettre sans réconciliation ».
 - **Ne PAS réémettre l'ordre dans ce cas.** Réémettre peut placer **deux** positions.
 
-### Procédure de réconciliation (à suivre si `AmbiguousOrderError`)
+## Réconciliation des ordres (PALLAS-M14 — implémentée et automatique)
 
-1. Interroger le statut des ordres ouverts / l'historique (endpoint `GET /orders`, non exposé
-   par le client actuellement — suivi PALLAS-M06).
-2. Vérifier les positions/balances pour confirmer si l'ordre a été prís ou refusé.
-3. Seulement alors, soit annuler l'ordre trouvé, soit émettre un nouvel ordre (avec le salt
-   requis).
+Le client expose maintenant les trois primitives qui manquaient, toutes authentifiées L2 :
+
+- `getOpenOrders(maker, { filterState })` → `GET /data/orders` (lecture, autorisée en dry-run) ;
+- `getOrder(orderId)` → `GET /data/order/{orderId}` (lecture) ;
+- `cancelAllOrders()` → `DELETE /cancel-all` (ÉCRITURE : bloquée en dry-run, primitive de
+  mise en sécurité du kill switch).
+
+Avec `PALLAS-M13` (état durable versionné + checksummé + machine d'états
+DECIDED→SUBMITTING→AMBIGUOUS/ACKED→TERMINAL) et le module `reconciliation.ts`
+(`@pallas/strategy`), le comportement est **déterministe** :
+
+1. **À la détection d'un `AmbiguousOrderError`** : l'état passe durablement en `AMBIGUOUS`
+   puis la réconciliation est déclenchée immédiatement.
+2. **Au démarrage** (`reconcileAtStartup`) : tous les ordres locaux non réglés sont réconciliés,
+   et les ordres **ouverts de l'exchange absents de l'état local** sont recensés comme `ACKED`
+   « externes » (exposition réelle visible pour la suite).
+3. **Convergence** : chaque ordre non réglé est interrogé chez l'exchange (par `order_id` si
+   connu, sinon par scan des ordres ouverts à prix/taille/côté) puis converge vers la vérité
+   constatée : `ACKED` (ouvert), `TERMINAL` rempli/annulé/rejeté, ou `TERMINAL cancelled
+   not_found_on_exchange`. Jamais de double émission, jamais de conclusion inventée.
+4. **Gate de scope** : AUCUNE nouvelle émission n'est possible sur un marché tant qu'il porte une
+   empreinte vivante non réglée (`SUBMITTING`/`SUBMITTED`/`AMBIGUOUS`/`RECONCILING`/`ACKED`
+   sans terminal). Le cycle est refusé `rejected_by:['SCOPE_RECONCILING']`, `execution:
+   not_attempted`.
+
+### Kill switch — deux couches, une sortie panic
+
+- **Côté risk engine** (port `KILL_SWITCH`, `pipeline.rs`) : toute nouvelle décision est rejetée.
+- **Côté point d'émission** (`KillSwitchEngagedError` dans `placeOrder`) : aucune émission ne part,
+  même si un appelant contournait le risk engine (défense en profondeur).
+- À l'engagement (persisté dans l'état durable), l'orchestrateur déclenche **un `cancelAllOrders()`
+  réel** (idempotent via `meta.kill_switch_cancelall_called` — jamais deux fois pour un même
+  engagement), pas seulement un blocage des décisions futures.
 
 ### `cancelOrder` — DELETE idempotent
 
@@ -64,4 +94,6 @@ no-op. Les erreurs transitoires (réseau, timeout, 5xx) sont donc retentées ; l
 ## Lien
 
 - Protections et réserves sécurité : `docs/SECURITY.md`.
-- État du plan et missions : `PLAN.md` + `docs/mission/mission-PALLAS-M04-*.md`.
+- Détail de la réconciliation : `packages/strategy/src/reconciliation.ts` + journal
+  `docs/mission/mission-PALLAS-M14-journal.md`.
+- État du plan et missions : `PLAN.md` + `docs/mission/`.

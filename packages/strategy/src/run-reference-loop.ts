@@ -48,6 +48,13 @@ import {
   transitionLifecycle,
   type OrderIntent,
 } from './durable-state.js';
+import {
+  enforceKillSwitch,
+  isLiveFootprint,
+  reconcileOrder,
+  reconcileScopeForMarket,
+  type ReconcileContext,
+} from './reconciliation.js';
 
 export interface ReferenceLoopOptions {
   client: PolymarketClient;
@@ -58,7 +65,11 @@ export interface ReferenceLoopOptions {
   bankrollUsd: number;
   maxOrderUsd: number;
   maxDrawdownUsd: number;
-  /** Signataire "de forme" pour le payload signé dry-run (éphémère si omis). */
+  /**
+   * Signataire "de forme" pour le payload signé dry-run (éphémère si omis).
+   * Sa clé publique = l'adresse "maker". Si fournie, l'orchestrateur peut
+   * réconcilier la réalité de l'exchange (getOpenOrders, lecture seule L2).
+   */
   signer?: { address: string; privKey: Uint8Array | string };
   /** Texte externe à faire passer par sanitizeInput avant tout traitement. */
   externalText?: string | null;
@@ -165,6 +176,39 @@ export async function runReferenceCycle(
   const trade = buildReferenceTradeRequest(signal, opts);
   const store = new DurableStateStore(opts.statePath);
 
+  // --- étape 2.5 (PALLAS-M14) : réconciliation du scope AVANT la décision ---
+  // Si l'échange dispose d'identifiants L2 (maker), on interroge la réalité
+  // AVANT de statuer : tout AMBIGUOUS/SUBMITTING/SUBMMITTED du marché est
+  // convergé vers son sort réel. Échec réseau ⇒ on laisse le gate de scope
+  // (en dessous) faire barrage : jamais d'émission sur un marché non réglé.
+  let reconcileSummary: { results: number; clear: boolean; skipped: boolean } = {
+    results: 0,
+    clear: true,
+    skipped: true,
+  };
+  if (opts.signer) {
+    const ctx: ReconcileContext = { store, client: opts.client, maker: opts.signer.address };
+    try {
+      const scope = await reconcileScopeForMarket(ctx, trade.market_id);
+      reconcileSummary = { results: scope.results.length, clear: scope.clear, skipped: false };
+    } catch (err) {
+      reconcileSummary = { ...reconcileSummary, skipped: false, clear: false };
+      ledger.append({
+        event: 'reconcile_scope_error',
+        timestamp: new Date().toISOString(),
+        payload: {
+          market_id: trade.market_id,
+          error: err instanceof Error ? err.message.slice(0, 300) : String(err),
+        },
+      });
+    }
+  }
+  ledger.append({
+    event: 'reconcile_scope',
+    timestamp: new Date().toISOString(),
+    payload: { market_id: trade.market_id, ...reconcileSummary },
+  });
+
   // --- étape 3 : risk engine + écriture DURABLE de la décision (DECIDED) ---
   // Lecture + validation + persist DECIDED sous UN SEUL verrou : personne ne
   // peut écrire entre notre lecture d'état et l'enregistrement de la décision.
@@ -173,6 +217,20 @@ export async function runReferenceCycle(
     const { decision, state } = await validateTradeWithState(trade, doc.risk);
     if (!decision.allowed) {
       return { decision, state, lifecycle: null as Awaited<ReturnType<typeof newLifecycle>> | null };
+    }
+    // --- Gate de scope (PALLAS-M14) : AUCUNE émission tant que le marché porte
+    // une empreinte vivante non réglée (AMBIGUOUS/SUBMITTING/RECONCILING/ACKED
+    // sans terminal). Le gate est VÉRIFIÉ SOUS LE VERROU : l'état lu est la
+    // vérité au moment d'écrire DECIDED.
+    const blockedBy = doc.orders.filter((o) => o.market_id === trade.market_id && isLiveFootprint(o));
+    if (blockedBy.length > 0) {
+      const blockedDecision = {
+        allowed: false,
+        gates: [],
+        rejected_by: ['SCOPE_RECONCILING'],
+        suggested_size_usd: 0,
+      };
+      return { decision: blockedDecision, state, lifecycle: null };
     }
     // Fenêtre de crash 1 (audit §4.5) : "décision perdue avant persistance".
     // Testé : au redémarrage, AUCUN ordre n'existe pour ce correlationId.
@@ -345,6 +403,34 @@ async function attemptPlaceOrder(
         );
         store.write(doc);
       });
+      // PALLAS-M14 : réconciliation IMMÉDIATE dès qu'un résultat ambigu est
+      // constaté (mission §3 : "systématiquement après un AmbiguousOrderError").
+      // Si elle échoue (réseau toujours cassé), le statut reste AMBIGUOUS et le
+      // gate de scope bloque toute nouvelle émission sur ce marché.
+      if (opts.signer) {
+        try {
+          const resolved = await reconcileOrder(
+            { store, client: opts.client, maker: opts.signer.address },
+            lifecycle.correlationId,
+          );
+          if (resolved) {
+            ledger.append({
+              event: 'order_reconciled_on_ambiguity',
+              timestamp: new Date().toISOString(),
+              payload: { ...resolved },
+            });
+          }
+        } catch (reconcileErr) {
+          ledger.append({
+            event: 'reconcile_after_ambiguity_error',
+            timestamp: new Date().toISOString(),
+            payload: {
+              correlation_id: lifecycle.correlationId,
+              error: reconcileErr instanceof Error ? reconcileErr.message.slice(0, 300) : String(reconcileErr),
+            },
+          });
+        }
+      }
     } else {
       await store.withLock((doc) => {
         doc.orders = doc.orders.map((o) =>
@@ -404,6 +490,30 @@ async function main(): Promise<void> {
           privKey: pkHex,
         }
       : undefined;
+
+  // PALLAS-M14 : la vérité du kill switch vit dans l'état durable. Au démarrage
+  // on la synchronise AU point d'émission (defense en profondeur) et, si elle
+  // passe de false→true, on ordonne un cancel-all à l'exchange (primitive de
+  // sortie). En dry-run sans creds, cancel-all est bloqué et simplement loggé.
+  const killStart = Date.now();
+  try {
+    const record = await enforceKillSwitch(store, client);
+    ledger.append({
+      event: 'kill_switch_sync',
+      timestamp: new Date().toISOString(),
+      payload: { ...record, elapsed_ms: Date.now() - killStart },
+    });
+  } catch (err) {
+    ledger.append({
+      event: 'kill_switch_sync',
+      timestamp: new Date().toISOString(),
+      payload: {
+        engaged: store.read().risk.kill_switch_engaged,
+        error: err instanceof Error ? err.message.slice(0, 300) : String(err),
+        elapsed_ms: Date.now() - killStart,
+      },
+    });
+  }
 
   console.log(
     JSON.stringify({

@@ -21,15 +21,17 @@ export function renderDashboard(snapshot: ObservatorySnapshot): string {
     <div class="pipeline"><span>MARKET</span><i>→</i><span>SIGNAL</span><i>→</i><span>RISK</span><i>→</i><strong>${esc(execution)}</strong><i>→</i><span>LEDGER</span></div>
     <dl><div><dt>REFERENCE LOOP</dt><dd>${badge(snapshot.system.loop, snapshot.system.loop === 'RUNNING' ? 'allow' : snapshot.system.loop === 'STOPPED' ? 'neutral' : 'warning')}</dd></div><div><dt>LAST EVENT AGE</dt><dd>${snapshot.system.loopAgeSeconds === null ? 'UNKNOWN' : `${snapshot.system.loopAgeSeconds}s`}</dd></div><div><dt>LEDGER</dt><dd>${badge(snapshot.system.ledger)}</dd></div><div><dt>ENTRIES</dt><dd>${snapshot.system.ledgerEntries}</dd></div><div><dt>LAST EVENT</dt><dd>${esc(snapshot.system.lastEventAt)}</dd></div></dl>
   </section>
-  <section class="panel state"><header><h2>DURABILITY · STATE</h2>${badge(caseLabel(snapshot.durability.format, snapshot.durability.integrity))}</header>
+  <section class="panel state"><header><h2>DURABILITY · STATE</h2>${badge(caseLabel(snapshot.durability.format, snapshot.durability.integrity))}${snapshot.durability.killSwitchEngaged ? badge('KILL SWITCH', 'reject') : ''}</header>
     <dl class="metrics">
       <div><dt>FORMAT</dt><dd>${esc(snapshot.durability.version === null ? snapshot.durability.format : snapshot.durability.version)}</dd></div>
       <div><dt>INTEGRITY</dt><dd>${badge(snapshot.durability.integrity, snapshot.durability.integrity === 'OK' ? 'allow' : 'warning')}</dd></div>
       <div><dt>ORDERS RECORDED</dt><dd>${snapshot.durability.orderCount}</dd></div>
+      <div><dt>LIVE ORDERS</dt><dd>${snapshot.durability.liveOrders}</dd></div>
+      <div><dt>RECONCILING</dt><dd>${badge(snapshot.durability.reconcilingOrders > 0 ? `${snapshot.durability.reconcilingOrders} IN PROGRESS` : 'NONE', snapshot.durability.reconcilingOrders > 0 ? 'warning' : 'neutral')}</dd></div>
     </dl>
     <table><thead><tr><th>CORRELATION</th><th>STATUS</th><th>ORDER ID</th><th>MARKET</th></tr></thead><tbody>${
       snapshot.durability.orders.length
-        ? snapshot.durability.orders.map((o) => `<tr><td class="mono">${esc(shortUuid(o.correlationId))}</td><td>${badge(o.status, o.status === 'ACKED' ? 'allow' : o.status === 'SUBMITTING' || o.status === 'AMBIGUOUS' ? 'warning' : 'neutral')}</td><td>${esc(o.orderId ?? '—')}</td><td>${esc(shortToken(o.marketId))}</td></tr>`).join('')
+        ? snapshot.durability.orders.map((o) => `<tr><td class="mono">${esc(shortUuid(o.correlationId))}</td><td>${badge(o.status, o.status === 'ACKED' ? 'allow' : o.status === 'SUBMITTING' || o.status === 'AMBIGUOUS' || o.status === 'RECONCILING' ? 'warning' : 'neutral')}</td><td>${esc(o.orderId ?? '—')}</td><td>${esc(shortToken(o.marketId))}</td></tr>`).join('')
         : '<tr><td colspan="4">NO DECISION RECORDED</td></tr>'
     }</tbody></table>
     <p class="timestamp">${snapshot.durability.notes.length ? snapshot.durability.notes.map((note) => esc(note)).join(' · ') : 'État transactionnel cohérent'}</p>
@@ -87,5 +89,8 @@ function summary(event: string, payload: unknown): string {
   if (event === 'execution_success') return 'Execution reported success';
   if (event === 'threat_detected') return `${Array.isArray(p['threats']) ? p['threats'].length : p['threats'] ?? 'UNKNOWN'} threat(s)`;
   if (event === 'external_text_sanitized') return p['modified'] ? 'External text modified' : 'External text unchanged';
+  if (event === 'reconcile_scope') return p['clear'] ? `Scope clear (${p['results'] ?? 0} reconciled)` : `Scope BLOCKED (${p['results'] ?? 0} reconciled, reconciling resumed)`;
+  if (event === 'order_reconciled_on_ambiguity') return `Resolved to ${String(p['convergence'] ?? 'UNKNOWN')} (${String(p['orderId'] ?? 'no order id')})`;
+  if (event === 'kill_switch_sync') return p['engaged'] ? `ENGAGED — cancel-all ${String(p['cancelAll'] ?? '?')}` : 'disengaged';
   return 'Recorded event';
 }

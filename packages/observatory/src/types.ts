@@ -35,6 +35,11 @@ export interface ObservatorySnapshot {
       side: string;
     }>;
     orderCount: number;
+    /** Ordres dont l'empreinte est(vive) chez l'exchange (PALLAS-M14). */
+    liveOrders: number;
+    /** Ordres en cours de réconciliation (PALLAS-M14). */
+    reconcilingOrders: number;
+    killSwitchEngaged: boolean | null;
     notes: string[];
   };
   market: {

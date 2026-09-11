@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { PolymarketClient, AmbiguousOrderError, ClobValidationError, OrderMismatchError, SignatureSchemaNotValidatedError } from './polymarketClient.js';
+import { PolymarketClient, AmbiguousOrderError, ClobValidationError, OrderMismatchError, SignatureSchemaNotValidatedError, KillSwitchEngagedError } from './polymarketClient.js';
 import {
   __setSignatureSchemaValidatedForTests as setSchemaValidated,
 } from './schemaGate.js';
+import { setGlobalKillSwitch, getGlobalKillSwitch } from './killSwitch.js';
 import { buildSignedOrderPayload, clobAuthDigest, recoverSignerAddress } from './polymarketSigner.js';
 import type { SignedOrderPayload } from './polymarketSigner.js';
 
@@ -411,5 +412,174 @@ describe('PALLAS-M10 — frontières résiduelles', () => {
     const fetcher = vi.fn(async () => new Response('boom', { status: 500 }));
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher: fetcher as unknown as typeof fetch, isDryRun: () => false });
     await expect(c.deriveApiKey(PK_ONE, 8n)).rejects.toThrow(/500/);
+  });
+});
+
+describe('PALLAS-M14 — kill switch au point d\'émission', () => {
+  beforeEach(() => {
+    setSchemaValidated(true);
+    setGlobalKillSwitch(true);
+  });
+  afterEach(() => {
+    setSchemaValidated(false);
+    setGlobalKillSwitch(false);
+  });
+
+  it('placeOrder => KillSwitchEngagedError quand le flag global est engagé, AUCUN POST', async () => {
+    const fetcher = vi.fn();
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy(9n)))
+      .rejects.toBeInstanceOf(KillSwitchEngagedError);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('placeOrder FONCTIONNE quand le kill switch est désengagé (flag global)', async () => {
+    setGlobalKillSwitch(false);
+    const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) => jsonResponse({ orderID: 'order-42', status: 'open' }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    const res = await c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy(10n));
+    expect(res.orderId).toBe('order-42');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('le flag peut être INJECTÉ (isKillSwitchEngaged) indépendamment du global', async () => {
+    setGlobalKillSwitch(false);
+    const fetcher = vi.fn();
+    const c = new PolymarketClient({
+      baseUrl: 'https://fake.api',
+      fetcher,
+      auth: CREDS,
+      isDryRun: () => false,
+      isKillSwitchEngaged: () => true,
+    });
+    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy(11n)))
+      .rejects.toBeInstanceOf(KillSwitchEngagedError);
+    expect(getGlobalKillSwitch()).toBe(false); // il refusait MAIS sans toucher au global
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('PALLAS-M14 — lectures ordres (getOpenOrders / getOrder)', () => {
+  beforeEach(() => setSchemaValidated(true));
+  afterEach(() => setSchemaValidated(false));
+
+  it('getOpenOrders GET /data/orders avec auth L2, maker + filter_state=open, et mappe vers ReadOrder', async () => {
+    const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) =>
+      jsonResponse({
+        data: [
+          {
+            asset_id: 'tok-yes',
+            price: '0.50',
+            size: '2.5',
+            original_size: '5',
+            side: 'BUY',
+            maker: ADDR.toLowerCase(),
+            taker: '0x0',
+            orderID: 'order-open-1',
+            status: 'open',
+          },
+        ],
+      })
+    );
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    const orders = await c.getOpenOrders(ADDR, { filterState: 'open' });
+
+    const [url, init] = fetcher.mock.calls[0];
+    const path = `/data/orders?maker=${encodeURIComponent(ADDR)}&filter_state=open`;
+    expect(url).toBe(`https://fake.api${path}`);
+    expect(init!.method).toBe('GET');
+    const headers = init!.headers as Record<string, string>;
+    expect(headers['POLY_SIGNATURE']).toBe(recomputeL2(CREDS.secret, headers['POLY_TIMESTAMP'], 'GET', path));
+
+    expect(orders).toHaveLength(1);
+    expect(orders[0]).toEqual({
+      orderId: 'order-open-1',
+      assetId: 'tok-yes',
+      side: 'BUY',
+      price: 0.5,
+      size: 2.5,
+      originalSize: 5,
+      status: 'open',
+      maker: ADDR.toLowerCase(),
+    });
+  });
+
+  it('getOpenOrders reste une LECTURE autorisée en dry-run (aucun effet de bord)', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ data: [] }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => true });
+    const orders = await c.getOpenOrders(ADDR, { filterState: 'open' });
+    expect(orders).toEqual([]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('getOpenOrders refuse sans credentials en live (lecture authentifiée)', async () => {
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher: vi.fn(), isDryRun: () => false });
+    await expect(c.getOpenOrders(ADDR)).rejects.toThrow(/credentials API requises/);
+  });
+
+  it('getOrder GET /data/order/{id} et mappe la carte CLOB', async () => {
+    const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) =>
+      jsonResponse({
+        asset_id: 'tok-yes',
+        price: '0.48',
+        size: '3',
+        side: 'SELL',
+        maker: ADDR.toLowerCase(),
+        orderID: 'order-single-7',
+        status: 'filled',
+      })
+    );
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    const order = await c.getOrder('order-single-7');
+
+    const [url, init] = fetcher.mock.calls[0];
+    const path = '/data/order/order-single-7';
+    expect(url).toBe(`https://fake.api${path}`);
+    const headers = init!.headers as Record<string, string>;
+    expect(headers['POLY_SIGNATURE']).toBe(recomputeL2(CREDS.secret, headers['POLY_TIMESTAMP'], 'GET', path));
+
+    expect(order).toMatchObject({
+      orderId: 'order-single-7',
+      assetId: 'tok-yes',
+      side: 'SELL',
+      price: 0.48,
+      size: 3,
+      status: 'filled',
+    });
+  });
+});
+
+describe('PALLAS-M14 — cancelAllOrders (primitive de sortie du kill switch)', () => {
+  it('est bloqué en dry-run (écriture)', async () => {
+    const fetcher = vi.fn();
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, isDryRun: () => true });
+    await expect(c.cancelAllOrders()).rejects.toThrow(/dry-run/);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('refuse sans credentials en live', async () => {
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher: vi.fn(), isDryRun: () => false });
+    await expect(c.cancelAllOrders()).rejects.toThrow(/credentials API requises/);
+  });
+
+  it('live : DELETE /cancel-all avec auth L2, retour cancelled', async () => {
+    const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) => jsonResponse({ success: true }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    const res = await c.cancelAllOrders();
+
+    const [url, init] = fetcher.mock.calls[0];
+    const path = '/cancel-all';
+    expect(url).toBe(`https://fake.api${path}`);
+    expect(init!.method).toBe('DELETE');
+    const headers = init!.headers as Record<string, string>;
+    expect(headers['POLY_SIGNATURE']).toBe(recomputeL2(CREDS.secret, headers['POLY_TIMESTAMP'], 'DELETE', path));
+
+    expect(res).toEqual({ cancelled: true, dryRun: false });
+  });
+
+  it('live : success:false => erreur explicite (échec de la primitive de sortie)', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ success: false, errorMsg: 'too many requests' }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    await expect(c.cancelAllOrders()).rejects.toThrow(/cancel-all refuse/);
   });
 });

@@ -1,19 +1,28 @@
 import { getIsDryRun } from './dryRun.js';
+import { getGlobalKillSwitch, KillSwitchEngagedError } from './killSwitch.js';
 import { assertSignatureSchemaValidated, SignatureSchemaNotValidatedError } from './schemaGate.js';
 import { buildL1Headers, buildL2Headers, type ClobApiCredentials } from './clobAuth.js';
 import { privateKeyToAddress, signClobAuth, calculateOrderAmounts } from './polymarketSigner.js';
 import type { SignedOrderPayload } from './polymarketSigner.js';
 import type { OrderParams, OrderStatus, Market } from './types.js';
+import { z } from 'zod';
 import {
   ClobValidationError,
   parseClob,
+  CancelAllResponseSchema,
+  ClobOrderSchema,
   DeriveApiKeyResponseSchema,
   MarketsResponseSchema,
+  OpenOrdersResponseSchema,
   OrderbookSchema,
   PlaceOrderResponseSchema,
 } from './clobSchema.js';
 
-export { SignatureSchemaNotValidatedError, ClobValidationError };
+export {
+  SignatureSchemaNotValidatedError,
+  ClobValidationError,
+  KillSwitchEngagedError,
+};
 
 export interface PolymarketClientConfig {
   /** URL de base de l'API CLOB. Par defaut la prod publique. */
@@ -29,6 +38,13 @@ export interface PolymarketClientConfig {
    * « isDryRun injectable »).
    */
   isDryRun?: () => boolean;
+  /**
+   * Controle kill switch au point d'emission ; par defaut lit le flag global de
+   * @pallas/execution (killSwitch.ts). PALLAS-M14 : defense en profondeur —
+   * en PLUS de la porte KILL_SWITCH du risk engine, placeOrder refuse d'emettre
+   * si le kill switch est engage.
+   */
+  isKillSwitchEngaged?: () => boolean;
   /**
    * Credentials API + adresse du signataire pour les ECRITURES et endpoints
    * prives (L2 HMAC, docs getting-started/api). Aucune ecriture n'est possible
@@ -76,6 +92,18 @@ export interface ApiCreds {
   apiKey: string;
   secret: string;
   passphrase: string;
+}
+
+/** Un ordre tel que lu par `getOpenOrders`/`getOrder` (PALLAS-M14). */
+export interface ReadOrder {
+  orderId: string;
+  assetId: string;
+  side: 'BUY' | 'SELL' | null;
+  price: number | null;
+  size: number | null;
+  originalSize: number | null;
+  status: string | null;
+  maker: string | null;
 }
 
 /**
@@ -180,6 +208,7 @@ export class PolymarketClient {
   private readonly baseUrl: string;
   private readonly fetcher: typeof fetch;
   private readonly isDryRunFn: () => boolean;
+  private readonly isKillSwitchEngagedFn: () => boolean;
   private readonly auth?: ClobApiCredentials;
   private readonly maxRetries: number;
 
@@ -187,6 +216,7 @@ export class PolymarketClient {
     this.baseUrl = config.baseUrl ?? 'https://clob.polymarket.com';
     this.fetcher = config.fetcher ?? fetch;
     this.isDryRunFn = config.isDryRun ?? getIsDryRun;
+    this.isKillSwitchEngagedFn = config.isKillSwitchEngaged ?? getGlobalKillSwitch;
     this.auth = config.auth;
     this.maxRetries = 2;
   }
@@ -265,6 +295,11 @@ export class PolymarketClient {
   ): Promise<OrderResult> {
     if (this.isDryRunFn()) {
       await this.dryRunBlock('placeOrder');
+    }
+    // PALLAS-M14 : defense en profondeur — le kill switch bloque l'EMISSION
+    // directement, en plus de la porte KILL_SWITCH du risk engine.
+    if (this.isKillSwitchEngagedFn()) {
+      throw new KillSwitchEngagedError();
     }
     assertSignatureSchemaValidated();
     // PALLAS-M10 : l'intention declaree doit correspondre a ce qui est signe,
@@ -385,6 +420,93 @@ export class PolymarketClient {
       apiKey: data.apiKey,
       secret: data.secret,
       passphrase: data.passphrase,
+    };
+  }
+
+  /**
+   * Annule tous les ordres ouverts du maker (PALLAS-M14). ECRITURE : dry-run
+   * par defaut. Primitive de securite : idempotente, aucune verification de
+   * schema d'ordre requise — c'est le chemin de sortie du kill switch.
+   */
+  async cancelAllOrders(): Promise<{ cancelled: boolean; dryRun: boolean }> {
+    if (this.isDryRunFn()) {
+      await this.dryRunBlock('cancelAllOrders');
+    }
+    const creds = this.requireAuth('cancelAllOrders');
+    const headers = await buildL2Headers(creds, 'DELETE', '/cancel-all');
+    const res = await this.fetcher(`${this.baseUrl}/cancel-all`, {
+      method: 'DELETE',
+      headers: { accept: 'application/json', ...headers },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Polymarket cancel-all HTTP ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const data = parseClob(CancelAllResponseSchema, 'cancelAllOrders', await res.json().catch(() => null));
+    if (data.success === false) {
+      throw new Error(`Polymarket cancel-all refuse: ${String(data.errorMsg ?? 'unknown')}`);
+    }
+    return { cancelled: data.success === true, dryRun: false };
+  }
+
+  /**
+   * Lit les ordres OUVERTS d'un maker (`GET /data/orders`). Lecture
+   * authentifiee L2, autorisee en dry-run (aucun effet de bord).
+   */
+  async getOpenOrders(maker: string, opts: { filterState?: string } = {}): Promise<ReadOrder[]> {
+    const creds = this.requireAuth('getOpenOrders');
+    const query = new URLSearchParams({ maker });
+    if (opts.filterState) query.set('filter_state', opts.filterState);
+    const path = `/data/orders?${query}`;
+    const headers = await buildL2Headers(creds, 'GET', path);
+    const res = await this.fetcher(`${this.baseUrl}${path}`, {
+      method: 'GET',
+      headers: { accept: 'application/json', ...headers },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Polymarket getOpenOrders HTTP ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const data = parseClob(OpenOrdersResponseSchema, 'getOpenOrders', await res.json().catch(() => null));
+    return data.data.map((o) => this.toReadOrder(o));
+  }
+
+  /** Lit UN ordre (`GET /data/order/<orderID>`). Lecture authentifiee L2. */
+  async getOrder(orderId: string): Promise<ReadOrder> {
+    const creds = this.requireAuth('getOrder');
+    const path = `/data/order/${encodeURIComponent(orderId)}`;
+    const headers = await buildL2Headers(creds, 'GET', path);
+    const res = await this.fetcher(`${this.baseUrl}${path}`, {
+      method: 'GET',
+      headers: { accept: 'application/json', ...headers },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Polymarket getOrder HTTP ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const data = parseClob(ClobOrderSchema, 'getOrder', await res.json().catch(() => null));
+    return this.toReadOrder(data);
+  }
+
+  private toReadOrder(raw: z.infer<typeof ClobOrderSchema>): ReadOrder {
+    const side = String(raw.side ?? '').toUpperCase();
+    return {
+      orderId: raw.orderID,
+      assetId: raw.asset_id,
+      side: side === 'BUY' || side === 'SELL' ? side : null,
+      price: typeof raw.price === 'number' ? raw.price : typeof raw.price === 'string' ? Number(raw.price) : null,
+      size: typeof raw.size === 'number' ? raw.size : typeof raw.size === 'string' ? Number(raw.size) : null,
+      originalSize:
+        typeof raw.original_size === 'number'
+          ? raw.original_size
+          : typeof raw.original_size === 'string'
+            ? Number(raw.original_size)
+            : null,
+      status: raw.status ?? null,
+      maker: raw.maker ?? null,
     };
   }
 

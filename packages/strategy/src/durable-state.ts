@@ -35,6 +35,7 @@ export const DURABLE_STATE_VERSION = 2;
 export const OrderLifecycleStatusSchema = z.enum([
   'DECIDED',
   'SUBMITTING',
+  'RECONCILING',
   'SUBMITTED',
   'AMBIGUOUS',
   'ACKED',
@@ -197,7 +198,12 @@ export function newLifecycle(
 /** Applique une transition d'état (retourne une copie ; ne mute pas `doc` ici). */
 export function transitionLifecycle(
   lifecycle: OrderLifecycle,
-  patch: { status: OrderLifecycleStatus; terminal_reason?: string; order_id?: string; outcome?: string },
+  patch: {
+    status: OrderLifecycleStatus;
+    terminal_reason?: string;
+    order_id?: string | null;
+    outcome?: string;
+  },
 ): OrderLifecycle {
   return {
     ...lifecycle,

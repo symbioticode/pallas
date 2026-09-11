@@ -92,13 +92,21 @@ export interface DurabilityReport {
   risk: Record<string, unknown> | null;
   orders: Array<Record<string, unknown>>;
   orderCount: number;
+  /** Ordres avec empreinte potentiellement vivante (M14 : SUBMITTING/AMBIGUOUS/
+   * RECONCILING/ACKED sans terminal) — bloque une nouvelle émission du scope. */
+  liveOrders: number;
+  /** Ordres en cours de réconciliation (M14). */
+  reconcilingOrders: number;
+  killSwitchEngaged: boolean | null;
   notes: string[];
 }
+
+const LIVE_STATUSES = new Set(['SUBMITTING', 'SUBMITTED', 'AMBIGUOUS', 'RECONCILING']);
 
 export function readDurableState(path: string): DurabilityReport {
   const raw = readObject(path);
   if (raw === null) {
-    return { format: 'MISSING', integrity: 'N/A', version: null, risk: null, orders: [], orderCount: 0, notes: ['state not found or unreadable'] };
+    return { format: 'MISSING', integrity: 'N/A', version: null, risk: null, orders: [], orderCount: 0, liveOrders: 0, reconcilingOrders: 0, killSwitchEngaged: null, notes: ['state not found or unreadable'] };
   }
   const version = typeof raw['version'] === 'number' ? raw['version'] : null;
   if (version !== 2) {
@@ -106,9 +114,9 @@ export function readDurableState(path: string): DurabilityReport {
     // mais à migrer en v2 (le pipeline faill-stop M13 refusera v1 dès la
     // prochaine écriture de cycle).
     if (Array.isArray(raw['hist_pnls'])) {
-      return { format: 'LEGACY_V1', integrity: 'N/A', version: null, risk: raw, orders: [], orderCount: 0, notes: ['legacy v1 state detected — migration v2 pending'] };
+      return { format: 'LEGACY_V1', integrity: 'N/A', version: null, risk: raw, orders: [], orderCount: 0, liveOrders: 0, reconcilingOrders: 0, killSwitchEngaged: null, notes: ['legacy v1 state detected — migration v2 pending'] };
     }
-    return { format: 'CORRUPT', integrity: 'CORRUPT', version, risk: null, orders: [], orderCount: 0, notes: ['unrecognized state document (not v2, not legacy v1)'] };
+    return { format: 'CORRUPT', integrity: 'CORRUPT', version, risk: null, orders: [], orderCount: 0, liveOrders: 0, reconcilingOrders: 0, killSwitchEngaged: null, notes: ['unrecognized state document (not v2, not legacy v1)'] };
   }
   const risk = object(raw['risk']);
   const orders = Array.isArray(raw['orders']) ? raw['orders'].map(object).filter((o): o is Record<string, unknown> => o !== null) : [];
@@ -118,6 +126,12 @@ export function readDurableState(path: string): DurabilityReport {
     : null;
   const integrityOk = checksum !== null && computed !== null && computed === checksum;
   const statuses = orders.map((o) => String(o['status'] ?? 'UNKNOWN'));
+  const liveOrders = orders.filter((o) => {
+    const status = String(o['status'] ?? '');
+    return LIVE_STATUSES.has(status) || (status === 'ACKED' && o['terminal_reason'] == null);
+  }).length;
+  const reconcilingOrders = statuses.filter((s) => s === 'RECONCILING').length;
+  const killSwitchEngaged = risk?.['kill_switch_engaged'] === true;
   const notes: string[] = [];
   if (checksum === null) notes.push('missing checksum');
   else if (!integrityOk) notes.push('checksum mismatch (tampering or partial write)');
@@ -127,6 +141,7 @@ export function readDurableState(path: string): DurabilityReport {
   }
   if (orders.some((o) => o['status'] === 'SUBMITTING' && o['order_id'] == null)) notes.push('reconciliation required (SUBMITTING, no local order id)');
   if (orders.some((o) => o['status'] === 'AMBIGUOUS')) notes.push('reconciliation required (AMBIGUOUS)');
+  if (killSwitchEngaged) notes.push('kill switch ENGAGED (émission bloquée, cancel-all orderné)');
   return {
     format: 'V2',
     integrity: integrityOk ? 'OK' : 'CORRUPT',
@@ -134,6 +149,9 @@ export function readDurableState(path: string): DurabilityReport {
     risk: integrityOk ? risk : null, // un état falsifié ne fait PAS autorité
     orders,
     orderCount: orders.length,
+    liveOrders,
+    reconcilingOrders,
+    killSwitchEngaged,
     notes,
   };
 }
@@ -222,6 +240,8 @@ export async function buildSnapshot(options: SnapshotOptions): Promise<Observato
   if (durability.integrity === 'CORRUPT') warnings.push('RISK STATE CORRUPT (checksum) — fail-stop, réconciliation requise');
   if (durability.orders.some((o) => o['status'] === 'SUBMITTING')) warnings.push('RECONCILIATION REQUIRED (SUBMITTING, no order id)');
   if (durability.orders.some((o) => o['status'] === 'AMBIGUOUS')) warnings.push('RECONCILIATION REQUIRED (AMBIGUOUS order)');
+  if (durability.orders.some((o) => o['status'] === 'RECONCILING')) warnings.push('RECONCILIATION IN PROGRESS (emission blocked)');
+  if (durability.killSwitchEngaged) warnings.push('KILL SWITCH ENGAGED (no emission, cancel-all fired)');
   if (cycleStart < 0) warnings.push('NO CYCLE RECORDED');
   const market = await readMarket(configuredToken, options.fetcher ?? fetch, now, options.staleAfterMs ?? 15_000);
   if (market.status === 'STALE') warnings.push('MARKET DATA STALE');
@@ -249,6 +269,9 @@ export async function buildSnapshot(options: SnapshotOptions): Promise<Observato
         side: String(o['side'] ?? ''),
       })),
       orderCount: durability.orderCount,
+      liveOrders: durability.liveOrders,
+      reconcilingOrders: durability.reconcilingOrders,
+      killSwitchEngaged: durability.killSwitchEngaged,
       notes: durability.notes,
     },
     market: { ...market, question: options.marketQuestion ?? null, outcome: options.marketOutcome ?? null },

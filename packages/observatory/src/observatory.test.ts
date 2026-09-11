@@ -199,4 +199,20 @@ describe('Observatory — état durable v2 (PALLAS-M13)', () => {
     expect(html).toContain('11111111…5555');
     expect(html).toContain('reconciliation required');
   });
+
+  it('PALLAS-M14: compte emprendes vives (LIVE ORDERS / RECONCILING) et badge kill switch', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-observatory-'));
+    const engagedRisk = { ...NEUTRAL_RISK, kill_switch_engaged: true };
+    const orders = [
+      { correlationId: '11111111-2222-4333-8444-555555555555', market_id: 'm1', side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1, intent_hash: 'a'.repeat(64), status: 'RECONCILING', order_id: null, attempt: 1, created_at: '2026-09-11T00:00:00Z', updated_at: '2026-09-11T00:00:00Z' },
+      { correlationId: '22222222-3333-4444-8555-666666666666', market_id: 'm2', side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1, intent_hash: 'b'.repeat(64), status: 'ACKED', order_id: 'o-2', attempt: 1, created_at: '2026-09-11T00:00:00Z', updated_at: '2026-09-11T00:00:00Z' },
+      { correlationId: '33333333-4444-4555-8666-777777777777', market_id: 'm3', side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1, intent_hash: 'c'.repeat(64), status: 'TERMINAL', terminal_reason: 'cancelled', order_id: 'o-3', attempt: 1, created_at: '2026-09-11T00:00:00Z', updated_at: '2026-09-11T00:00:00Z' },
+    ];
+    writeFileSync(join(dir, 'risk.json'), stateV2(engagedRisk, orders));
+    const report = readDurableState(join(dir, 'risk.json'));
+    expect(report.liveOrders).toBe(2); // RECONCILING + ACKED-sans-terminal ; TERMINAL exclu
+    expect(report.reconcilingOrders).toBe(1);
+    expect(report.killSwitchEngaged).toBe(true);
+    expect(report.notes.some((n) => n.includes('kill switch ENGAGED'))).toBe(true);
+  });
 });
