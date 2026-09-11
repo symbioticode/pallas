@@ -9,12 +9,14 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "build": "tsc --build packages/core packages/risk packages/execution packages/ledger packages/strategy",
-    "typecheck": "tsc --build --dry packages/core packages/risk packages/execution packages/ledger packages/strategy",
-    "pretest": "tsc --build packages/core packages/risk packages/execution packages/ledger packages/strategy",
+    "build": "tsc --build packages/core packages/risk packages/execution packages/ledger packages/strategy packages/observatory",
+    "typecheck": "tsc --build --dry packages/core packages/risk packages/execution packages/ledger packages/strategy packages/observatory",
+    "pretest": "tsc --build packages/core packages/risk packages/execution packages/ledger packages/strategy packages/observatory",
     "test": "vitest run --reporter=verbose",
     "test:watch": "vitest",
     "reference-loop": "node packages/strategy/dist/run-reference-loop.js",
+    "observatory": "node packages/observatory/dist/server.js",
+    "observatory:demo": "node scripts/observatory-demo.mjs",
     "dry-run": "node scripts/dry-run.mjs"
   },
   "devDependencies": {
