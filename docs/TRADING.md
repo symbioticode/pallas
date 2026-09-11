@@ -104,10 +104,13 @@ Le risk engine est maintenant un véritable gestionnaire de risque de portefeuil
   `rs-clob-client`) où `taker`/`nonce`/`feeRateBps` existent. Vérifié par comparaison directe
   (tests M08 dans `polymarketSigner.test.ts`).
 - **Scope signature : EOA uniquement.** `signatureType` default = 0 (EOA) ; c'est le seul mode
-  validé et testé de bout en bout. Le champ est transmis tel quel si un appelant force
-  PROXY/SAFE/DEPOSIT_WALLET, mais **POLY_1271 (deposit wallet, signatureType 3) n'est pas
-  supporté** : l'enveloppe 1271 des wallets email/proxy n'est pas implémentée et une telle
-  signature serait refusée par l'exchange. Ne pas émettre d'ordre non-EOA avec ce module.
+  validé et testé de bout en bout. **PALLAS-M17 : tout `signatureType` ≠ 0 (PROXY/SAFE/
+  DEPOSIT_WALLET, dont POLY_1271) est rejeté à la construction** dans `buildSignedOrderPayload`
+  (erreur explicite) — jamais transmis silencieusement.
+- **Montants : algorithme officiel de rounding par tick** (PALLAS-M17) : port fidèle de
+  `py-clob-client-v2` (le client TS officiel délègue le rounding à l'appelant) — `tick_size`
+  accepté : 0.1/0.01/0.005/0.0025/0.001/0.0001, défaut 0.01. La taille est tronquée (round_down),
+  le prix arrondi normal, le montant monétaire borné up puis down au plafond officiel.
 - La validation du schéma contre une API live (testnet) reste une étape distincte, verrouillée
   par `schemaGate` (`signatureSchemaValidated=false`).
 

@@ -201,6 +201,28 @@ test('calculateOrderAmounts : BUY maker=USD & taker=shares, SELL inverse', () =>
   expect(buy.takerAmount).toBe(sell.makerAmount);
 });
 
+test('PALLAS-M17 : calculateOrderAmounts accepte tickSize et arrondit officiellement', () => {
+  // tick 0.01 : prix arrondi a 0.33, montant 0.99 -> plus de centime fantome (1.00).
+  expect(calculateOrderAmounts('BUY', 0.333333333, 3, '0.01')).toEqual({
+    makerAmount: 990_000n,
+    takerAmount: 3_000_000n,
+  });
+  // tick 0.1 : prix arrondi a 1 decimale.
+  expect(calculateOrderAmounts('BUY', 0.87, 50, '0.1')).toEqual({
+    makerAmount: 45_000_000n,
+    takerAmount: 50_000_000n,
+  });
+  // tick_size hors table officielle => fail-closed.
+  expect(() => calculateOrderAmounts('BUY', 0.5, 10, '0.5')).toThrow(/tick_size/);
+});
+
+test('PALLAS-M17 : signatureType non-EOA refuse a la construction (PROXY/SAFE/DEPOSIT_WALLET)', () => {
+  const base = { side: 'BUY' as const, price: 0.52, size: 10, tokenId: TOKEN, salt: FIXED_SALT, timestampMillis: T_MILLIS };
+  expect(() => buildSignedOrderPayload({ ...base, signatureType: SIGNATURE_TYPE.PROXY }, MAKER, PK_ONE)).toThrow(/EOA/);
+  expect(() => buildSignedOrderPayload({ ...base, signatureType: SIGNATURE_TYPE.SAFE }, MAKER, PK_ONE)).toThrow(/EOA/);
+  expect(() => buildSignedOrderPayload({ ...base, signatureType: SIGNATURE_TYPE.DEPOSIT_WALLET }, MAKER, PK_ONE)).toThrow(/EOA/);
+});
+
 test('orderDigest reproduit le vecteur de reference viem (exchange standard, BUY)', () => {
   const d = orderDigest(fixedOrder());
   expect('0x' + Buffer.from(d).toString('hex')).toBe(VEC_BUY_DIGEST);

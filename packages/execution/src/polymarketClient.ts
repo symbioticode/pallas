@@ -31,11 +31,12 @@ export interface PolymarketClientConfig {
   fetcher?: typeof fetch;
   /**
    * Controle dry-run ; par defaut lit le flag global de @pallas/core.
-   * PALLAS-M10 (decision, reserve devient explicite) : cette injection est
-   * RESERVEE AUX TESTS. Aucun appelant de production ne doit fournir ce
-   * delegate ; la politique d'assemblage de la Phase 3 (gateway/agent, cf.
-   * PLAN.md) devra INTERDIRE cette injection hors tests (SECURITY.md §
-   * « isDryRun injectable »).
+   * PALLAS-M17 (audit v0.3 F-06, reserve ouverte aux audits v0.1/v0.2/v0.3) :
+   * cette injection est RESERVEE AUX TESTS et elle est desormais VERROUILLEE —
+   * fournir `isDryRun` hors mode test (variable d'environnement dediee
+   * `PALLAS_TEST_MODE=1`, non documentee en usage production) leve une erreur
+   * au constructeur. Un chemin de production standard NE PEUT PLUS instancier
+   * un client en mode live par ce biais : il lit uniquement le flag global.
    */
   isDryRun?: () => boolean;
   /**
@@ -142,23 +143,34 @@ export class OrderMismatchError extends Error {
 
 /**
  * Compare `params` (l'intention) au `signed.order` (ce qui sera transmis).
- * Tolérance de 1 unite (1e-6 USD ou share) : l'arithmetique flottante refaite
- * ici et dans `calculateOrderAmounts` doit donner le meme entier, 1 unite
- * absorbe un quelconque arrondi de recopie — jamais plus.
+ *
+ * PALLAS-M17 (audit v0.3 F-07) : cross-check COMPLET — `marketId` (obligatoire
+ * et ETAL au `tokenId`), `tokenId` (désormais obligatoire), `side` et les
+ * montants recalculés avec l'ALGORITHME OFFICIEL de rounding par tick
+ * (`tickSize` de l'intention). Tolérance de 1 unité (1e-6 USD ou share) :
+ * l'arithmetique flottante refaite ici et dans `calculateOrderAmounts` doit
+ * donner le meme entier, 1 unite absorbe un quelconque arrondi de recopie —
+ * jamais plus. Plusieurs couples prix/taille peuvent produire les memes
+ * entiers (les flux monétaires arrondis sont ce qui est signé) : la
+ * divergence prix/taille non-bornee reste donc hors périmètre signé, limite
+ * documentée (docs/SECURITY.md, rapport M17).
  */
 function assertOrderMatchesParams(signed: SignedOrderPayload, params: OrderParams): void {
   const o = signed.order;
   const absBig = (x: bigint): bigint => (x < 0n ? -x : x);
   const sideMatches = o.side === params.side;
-  const tokenMatches = params.tokenId == null || o.tokenId === params.tokenId;
-  const expected = calculateOrderAmounts(params.side, params.price, params.size);
+  // tokenId OBLIGATOIRE et identique au payload signé (F-07).
+  const tokenMatches = o.tokenId === params.tokenId;
+  // marketId DEFINI précisément comme l'actif CLOB : doit ETALER tokenId.
+  const marketMatches = params.marketId === params.tokenId;
+  const expected = calculateOrderAmounts(params.side, params.price, params.size, params.tickSize);
   const tol = 1n;
   const mDiff = absBig(BigInt(o.makerAmount) - expected.makerAmount);
   const tDiff = absBig(BigInt(o.takerAmount) - expected.takerAmount);
-  if (!sideMatches || !tokenMatches || mDiff > tol || tDiff > tol) {
+  if (!sideMatches || !tokenMatches || !marketMatches || mDiff > tol || tDiff > tol) {
     throw new OrderMismatchError(
-      `side(match=${sideMatches}) tokenId(match=${tokenMatches}) makerAmount(Δ=${mDiff} unités 1e-6, tol=${tol}) ` +
-        `takerAmount(Δ=${tDiff} unités 1e-6, tol=${tol})`,
+      `side(match=${sideMatches}) tokenId(match=${tokenMatches}) marketId(match=${marketMatches}) ` +
+        `makerAmount(Δ=${mDiff} unités 1e-6, tol=${tol}) takerAmount(Δ=${tDiff} unités 1e-6, tol=${tol})`,
     );
   }
 }
@@ -215,6 +227,12 @@ export class PolymarketClient {
   private readonly maxRetries: number;
 
   constructor(config: PolymarketClientConfig = {}) {
+    if (config.isDryRun !== undefined && process.env.PALLAS_TEST_MODE !== '1') {
+      throw new Error(
+        `isDryRun: injection reservee aux tests — definir PALLAS_TEST_MODE=1 pour l'activer. ` +
+          `En production, le mode live est pilote uniquement par disableDryRun('LIVE') (PALLAS-M17)`,
+      );
+    }
     this.baseUrl = config.baseUrl ?? 'https://clob.polymarket.com';
     this.fetcher = config.fetcher ?? fetch;
     this.isDryRunFn = config.isDryRun ?? getIsDryRun;

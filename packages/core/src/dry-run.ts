@@ -54,7 +54,16 @@ export function disableDryRun(explicitConfirmation: string): DisableDryRunResult
   return { enabled: dryRunEnabled, warning: null };
 }
 
-/** Retourne au mode dry-run (sans confirmation, c'est le mode sur). */
+/**
+ * Retourne au mode dry-run (sans confirmation, c'est le mode sur).
+ *
+ * PALLAS-M17 : usage RESERVE aux tests et à la remise en simulation manuelle
+ * par un operateur. NON exporté par le paquet public (`@pallas/core`) : il ne
+ * doit JAMAIS être atteignable par un chemin de décision automatisé — un
+ * ordre n'a aucun droit de réarmer le dry-run. Seuls `isDryRun` /
+ * `getDryRunState` / `disableDryRun('LIVE')` sont publics (l'entrée
+ * opérateur explicite reste `applySafetyGates`).
+ */
 export function enableDryRun(): void {
   dryRunEnabled = true;
 }

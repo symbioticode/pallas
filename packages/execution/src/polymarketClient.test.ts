@@ -196,7 +196,7 @@ describe('PolymarketClient writes — fail-closed', () => {
     const fetcher = vi.fn();
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => true });
     await expect(
-      c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy())
+      c.placeOrder({ marketId: '12345', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, signedBuy())
     ).rejects.toThrow(/dry-run/);
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -204,7 +204,7 @@ describe('PolymarketClient writes — fail-closed', () => {
   it('placeOrder refuse sans preuve de schema valide (fail-closed), meme avec credentials', async () => {
     const fetcher = vi.fn();
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
-    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy()))
+    await expect(c.placeOrder({ marketId: '12345', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, signedBuy()))
       .rejects.toBeInstanceOf(SignatureSchemaNotValidatedError);
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -213,7 +213,7 @@ describe('PolymarketClient writes — fail-closed', () => {
     const fetcher = vi.fn();
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, isDryRun: () => false });
     setSchemaValidated(true);
-    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy()))
+    await expect(c.placeOrder({ marketId: '12345', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, signedBuy()))
       .rejects.toThrow(/credentials API requises/);
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -244,7 +244,7 @@ describe('PolymarketClient writes — live valide', () => {
     const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) => jsonResponse({ orderID: 'order-42', status: 'open' }));
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
     const res = await c.placeOrder(
-      { marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, // tokenId coherent avec le signe
+      { marketId: '12345', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, // tokenId coherent avec le signe
       signedBuy(),
     );
 
@@ -280,7 +280,7 @@ describe('PolymarketClient writes — live valide', () => {
   it('placeOrder passe postOnly=true quand demande', async () => {
     const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) => jsonResponse({ orderID: 'order-43', status: 'open' }));
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
-    await c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy(1n), { postOnly: true });
+    await c.placeOrder({ marketId: '12345', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, signedBuy(1n), { postOnly: true });
     const body = JSON.parse(String(fetcher.mock.calls[0][1]!.body));
     expect(body.postOnly).toBe(true);
   });
@@ -288,7 +288,7 @@ describe('PolymarketClient writes — live valide', () => {
   it('placeOrder refuse HTTP => throw', async () => {
     const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) => new Response('{"errorMsg":"insufficient balance"}', { status: 400 }));
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
-    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy(2n)))
+    await expect(c.placeOrder({ marketId: '12345', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, signedBuy(2n)))
       .rejects.toThrow(/400/);
   });
 
@@ -341,7 +341,7 @@ describe('PolymarketClient writes — live valide', () => {
         })
     );
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
-    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy(3n)))
+    await expect(c.placeOrder({ marketId: '12345', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, signedBuy(3n)))
       .rejects.toBeInstanceOf(AmbiguousOrderError);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
@@ -349,7 +349,7 @@ describe('PolymarketClient writes — live valide', () => {
   it('M04: 5xx sur placeOrder => AmbiguousOrderError, pas de retry (reponse serveur inconnue)', async () => {
     const fetcher = vi.fn(async () => new Response('gateway timeout', { status: 502 }));
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
-    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy(4n)))
+    await expect(c.placeOrder({ marketId: '12345', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, signedBuy(4n)))
       .rejects.toBeInstanceOf(AmbiguousOrderError);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
@@ -381,7 +381,7 @@ describe('PALLAS-M10 — frontières résiduelles', () => {
     const fetcher = vi.fn();
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
     // signed pour price 0.5 / size 10 ; params declare price 0.9 => maker USD 5M vs 9M
-    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.9, size: 10, side: 'BUY' }, signedBuy(5n)))
+    await expect(c.placeOrder({ marketId: '12345', price: 0.9, size: 10, side: 'BUY', tokenId: '12345' }, signedBuy(5n)))
       .rejects.toBeInstanceOf(OrderMismatchError);
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -389,7 +389,7 @@ describe('PALLAS-M10 — frontières résiduelles', () => {
   it('M10: placeOrder rejette si la side signee diverge de params', async () => {
     const fetcher = vi.fn();
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
-    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'SELL' }, signedBuy(6n)))
+    await expect(c.placeOrder({ marketId: '12345', price: 0.5, size: 10, side: 'SELL', tokenId: '12345' }, signedBuy(6n)))
       .rejects.toBeInstanceOf(OrderMismatchError);
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -398,7 +398,7 @@ describe('PALLAS-M10 — frontières résiduelles', () => {
     const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) => jsonResponse({ orderID: 'order-m10', status: 'open' }));
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
     const res = await c.placeOrder(
-      { marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' },
+      { marketId: '12345', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' },
       signedBuy(7n),
     );
     expect(res.orderId).toBe('order-m10');
@@ -417,6 +417,83 @@ describe('PALLAS-M10 — frontières résiduelles', () => {
   });
 });
 
+describe('PALLAS-M17 — intention canonique : tokenId obligatoire + marketId precis + isDryRun verrouille', () => {
+  beforeEach(() => setSchemaValidated(true));
+  afterEach(() => setSchemaValidated(false));
+
+  it('placeOrder rejette si marketId diverge de tokenId (mauvais market => OrderMismatchError, AUCUN appel reseau)', async () => {
+    const fetcher = vi.fn();
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    await expect(c.placeOrder({ marketId: 'mkt-AUTRE', tokenId: '12345', price: 0.5, size: 10, side: 'BUY' }, signedBuy(21n)))
+      .rejects.toBeInstanceOf(OrderMismatchError);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('placeOrder rejette si tokenId est ABSENT au runtime (fail-save meme hors TS)', async () => {
+    const fetcher = vi.fn();
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    const params = { marketId: '12345', tokenId: undefined, price: 0.5, size: 10, side: 'BUY' } as unknown as Parameters<typeof c.placeOrder>[0];
+    await expect(c.placeOrder(params, signedBuy(22n))).rejects.toBeInstanceOf(OrderMismatchError);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('placeOrder accepte une intention canonique complete (marketId === tokenId === signe)', async () => {
+    const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) => jsonResponse({ orderID: 'order-m17', status: 'open' }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    const res = await c.placeOrder({ marketId: '12345', tokenId: '12345', price: 0.5, size: 10, side: 'BUY' }, signedBuy(23n));
+    expect(res.orderId).toBe('order-m17');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('tickSize coherent : montants recalcules avec le rounding officiel, placeOrder accepte', async () => {
+    const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) => jsonResponse({ orderID: 'order-m17b', status: 'open' }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    // signé avec tickSize 0.01 (0.3333 -> prix 0.33, montant 0.99) ; params identiques.
+    const signed = buildSignedOrderPayload(
+      { side: 'BUY', price: 0.333333333, size: 3, tokenId: 12345n, salt: 424242424242424n, tickSize: '0.01', timestampMillis: 1786000000000n },
+      ADDR,
+      PK_ONE,
+    );
+    const res = await c.placeOrder({ marketId: '12345', tokenId: '12345', price: 0.333333333, size: 3, side: 'BUY', tickSize: '0.01' }, signed);
+    expect(res.orderId).toBe('order-m17b');
+    const body = JSON.parse(String(fetcher.mock.calls[0][1]!.body));
+    expect(body.order.makerAmount).toBe('990000'); // 0.99 USD (pas 1.00)
+    expect(body.order.takerAmount).toBe('3000000');
+  });
+
+  it('tickSize divergent au cross-check => OrderMismatchError (recalcul officiel different)', async () => {
+    const fetcher = vi.fn();
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    // signé au tick 0.1 (prix 0.9) ; params déclarent le price reel 0.87 au tick 0.1 => divergence.
+    const signed = buildSignedOrderPayload(
+      { side: 'BUY', price: 0.87, size: 50, tokenId: 12345n, salt: 424242424242424n, tickSize: '0.1', timestampMillis: 1786000000000n },
+      ADDR,
+      PK_ONE,
+    );
+    await expect(
+      c.placeOrder({ marketId: '12345', tokenId: '12345', price: 0.87, size: 50, side: 'BUY', tickSize: '0.01' }, signed),
+    ).rejects.toBeInstanceOf(OrderMismatchError);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('isDryRun injectable est REFUSE hors PALLAS_TEST_MODE (cachette du mode live retiree)', async () => {
+    const saved = process.env.PALLAS_TEST_MODE;
+    delete process.env.PALLAS_TEST_MODE;
+    try {
+      expect(() => new PolymarketClient({ fetcher: vi.fn(), isDryRun: () => false })).toThrow(/PALLAS_TEST_MODE/);
+    } finally {
+      if (saved === undefined) delete process.env.PALLAS_TEST_MODE;
+      else process.env.PALLAS_TEST_MODE = saved;
+    }
+  });
+
+  it('isDryRun est autorisé quand PALLAS_TEST_MODE=1 (injection test-only ok)', () => {
+    process.env.PALLAS_TEST_MODE = '1';
+    const c = new PolymarketClient({ fetcher: vi.fn(), isDryRun: () => false });
+    expect(c).toBeInstanceOf(PolymarketClient);
+  });
+});
+
 describe('PALLAS-M14 — kill switch au point d\'émission', () => {
   beforeEach(() => {
     setSchemaValidated(true);
@@ -430,7 +507,7 @@ describe('PALLAS-M14 — kill switch au point d\'émission', () => {
   it('placeOrder => KillSwitchEngagedError quand le flag global est engagé, AUCUN POST', async () => {
     const fetcher = vi.fn();
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
-    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy(9n)))
+    await expect(c.placeOrder({ marketId: '12345', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, signedBuy(9n)))
       .rejects.toBeInstanceOf(KillSwitchEngagedError);
     expect(fetcher).not.toHaveBeenCalled();
   });
@@ -439,7 +516,7 @@ describe('PALLAS-M14 — kill switch au point d\'émission', () => {
     setGlobalKillSwitch(false);
     const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) => jsonResponse({ orderID: 'order-42', status: 'open' }));
     const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
-    const res = await c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy(10n));
+    const res = await c.placeOrder({ marketId: '12345', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, signedBuy(10n));
     expect(res.orderId).toBe('order-42');
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
@@ -454,7 +531,7 @@ describe('PALLAS-M14 — kill switch au point d\'émission', () => {
       isDryRun: () => false,
       isKillSwitchEngaged: () => true,
     });
-    await expect(c.placeOrder({ marketId: 'mkt-1', price: 0.5, size: 10, side: 'BUY' }, signedBuy(11n)))
+    await expect(c.placeOrder({ marketId: '12345', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, signedBuy(11n)))
       .rejects.toBeInstanceOf(KillSwitchEngagedError);
     expect(getGlobalKillSwitch()).toBe(false); // il refusait MAIS sans toucher au global
     expect(fetcher).not.toHaveBeenCalled();

@@ -26,11 +26,10 @@
  *   domain : name "Polymarket CTF Exchange", version "2", chainId 137,
  *            verifyingContract = exchange (standard ou neg-risk selon le marche).
  *
- * SCOPE SIGNATURE (PALLAS-M08) : EOA (signatureType 0) uniquement valide et teste. Le champ
- * `signatureType` est transmis tel quel (passthrough PROXY/SAFE/DEPOSIT_WALLET), mais le mode
- * POLY_1271 des deposit wallets (signatureType 3, enveloppe 1271 des cles email/proxy) n'est
- * PAS implemente : une signature non-EOA livree depuis ce module n'a pas la bonne forme et
- * serait rejetee. Decision documentee docs/TRADING.md — hors MVP, PAS de validation live.
+ * SCOPE SIGNATURE (PALLAS-M08) : EOA (signatureType 0) uniquement valide et teste.
+ * PALLAS-M17 : tout autre signatureType (1=PROXY, 2=SAFE, 3=DEPOSIT_WALLET,
+ * y compris POLY_1271) est REJETE a la construction dans `buildSignedOrderPayload`
+ * — jamais transmis silencieusement. Decision documentee docs/TRADING.md.
  *
  * GATE : tant que le schema n'a PAS ete valide contre l'API live, aucun ordre
  * signe n'est emis (fail-closed). Voir `schemaGate.ts` — plus AUCUN booléen de
@@ -45,6 +44,7 @@
 
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { keccak_256 } from '@noble/hashes/sha3';
+import { calculateTickedOrderAmounts, roundingConfigForTickSize } from './tickRounding.js';
 
 type RecoverSignature = (
   signature: Uint8Array,
@@ -426,20 +426,24 @@ export function signClobAuth(
 export const CLOB_DECIMALS = 1_000_000n;
 
 /**
- * Montants maker/taker selon le sens de l'ordre (docs place-orders) :
- * - BUY  : maker = montant monetaire (price×size), taker = nombre de shares.
- * - SELL : maker = nombre de shares, taker = montant monetaire (price×size).
- * Les montants sont en unites 6 decimales.
+ * Montants maker/taker selon le sens de l'ordre (docs place-orders), avec
+ * l'ALGORITHME OFFICIEL de rounding par tick (PALLAS-M17, port fidèle de
+ * py-clob-client-v2). Voir `tickRounding.ts` pour la règle exacte.
+ *
+ * @param tickSize tick_size du marché ("0.1" | "0.01" | "0.005" | "0.0025" |
+ *   "0.001" | "0.0001") — l'algorithme officiel n'a de sens que pour ces
+ *   valeurs, tout autre tick_size est rejeté (fail-closed).
  */
-export function calculateOrderAmounts(side: 'BUY' | 'SELL', price: number, size: number): { makerAmount: bigint; takerAmount: bigint } {
-  if (!(price > 0) || !(size > 0)) throw new Error('price et size doivent etre positifs');
-  const usd = BigInt(Math.round(price * size * 1_000_000));
-  const shares = BigInt(Math.round(size * 1_000_000));
-  if (side === 'BUY') {
-    return { makerAmount: usd, takerAmount: shares };
-  }
-  return { makerAmount: shares, takerAmount: usd };
+export function calculateOrderAmounts(
+  side: 'BUY' | 'SELL',
+  price: number,
+  size: number,
+  tickSize = '0.01',
+): { makerAmount: bigint; takerAmount: bigint } {
+  return calculateTickedOrderAmounts(side, price, size, tickSize);
 }
+
+export { roundingConfigForTickSize };
 
 /** Salt aleatoire dans [1, 2^53) : serialise en nombre JSON sur le wire (safe). */
 export function randomSalt(): bigint {
@@ -480,6 +484,11 @@ export interface SignedOrderParams {
   side: 'BUY' | 'SELL';
   price: number;
   size: number;
+  /**
+   * tick_size du marché (rounding officiel des montants, PALLAS-M17).
+   * Défaut `"0.01"` (coût qui domine la majorité des marchés).
+   */
+  tickSize?: string;
   /** "0" = GTC ; sinon timestamp seconds GTD. */
   expirationSeconds?: bigint | string;
   signatureType?: number;
@@ -503,9 +512,20 @@ export function buildSignedOrderPayload(
   signerAddress: string,
   privKey: Uint8Array | string
 ): SignedOrderPayload {
-  const { makerAmount, takerAmount } = calculateOrderAmounts(params.side, params.price, params.size);
-  const sideBits = params.side === 'BUY' ? ORDER_SIDE.BUY : ORDER_SIDE.SELL;
+  // PALLAS-M17 : seul EOA (signatureType 0) est implémenté et testé. Les modes
+  // 1-3 (PROXY/SAFE/DEPOSIT_WALLET, y compris POLY_1271) ne le sont pas : les
+  // rejeter à la CONSTRUCTION plutôt que de transmettre silencieusement un
+  // mode non conforme qui serait refusé par l'exchange (audit v0.3 §4.3).
   const signatureType = params.signatureType ?? SIGNATURE_TYPE.EOA;
+  if (signatureType !== SIGNATURE_TYPE.EOA) {
+    throw new Error(
+      `signatureType=${signatureType} non supporté : seuls les ordres EOA (signatureType 0) ` +
+        `sont implémentés et testés (PROXY/SAFE/DEPOSIT_WALLET rejetés) — PALLAS-M17`,
+    );
+  }
+
+  const { makerAmount, takerAmount } = calculateOrderAmounts(params.side, params.price, params.size, params.tickSize);
+  const sideBits = params.side === 'BUY' ? ORDER_SIDE.BUY : ORDER_SIDE.SELL;
   const expirationSeconds = params.expirationSeconds !== undefined
     ? params.expirationSeconds.toString()
     : '0';

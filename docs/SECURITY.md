@@ -1,8 +1,9 @@
 # Sécurité — Pallas
 
 Statut : document complété par PALLAS-M03 (sandbox), PALLAS-M05 (mémoire), PALLAS-M06
-(CI + reporting + réserves closes + annexe de vérification réelle) et PALLAS-M16 (signature
-séparée du ledger). Date : 2026-09-11.
+(CI + reporting + réserves closes + annexe de vérification réelle), PALLAS-M16 (signature
+séparée du ledger) et PALLAS-M17 (autorités indépendantes + intention canonique).
+Date : 2026-09-11.
 
 ## Signalement de vulnérabilité
 
@@ -24,6 +25,9 @@ limites sont documentées ci-dessous et dans les rapports de mission `docs/missi
 | Frontières runtime : schémas Zod, rejet explicite des réponses hors contrat | ✔ | M04 |
 | Zeroing mémoire : copies Buffer des clés effacées, strings non-effaçables | ✔ (limité, voir §"Mémoire") | M05 |
 | Ledger fail-stop + signature séparée (clé privée hors process écrivain) | ✔ | M16 |
+| `isDryRun` verrouillé : injection réservée tests, `enableDryRun` hors package | ✔ | M17 |
+| Intention canonique : `tokenId` obligatoire, `marketId` précis, rounding officiel | ✔ | M17 |
+| Rejet `signatureType` ≠ EOA à la construction | ✔ | M17 |
 | CI active (npm + cargo, audit) | ✔ | M06 |
 
 ## Sandbox bwrap (phase 1.3) — portée réelle de la protection
@@ -55,16 +59,23 @@ implicitement permis (stdout/stderr renvoyés à l'appelant).
 - **Retry placeOrder** : l'API CLOB Polymarket n'a aucune clé d'idempotence ; un timeout ou
   un 5xx laisse l'ordre dans un état indéterminé (`AmbiguousOrderError`) — réconciliation à
   la main (voir `docs/TRADING.md`), pas de retry auto.
-- **`isDryRun` injectable** au constructeur de `PolymarketClient` (utile aux tests) : c'est une
-  porte de contournement pour tout appelant interne. **PALLAS-M10 (décision actée) : réserve
-  documentée, injection RESTÉE intentionnellement limitée** — `isDryRun` lit par défaut le flag
-  global de `@pallas/core` ; le champ d'option est hors index public et la politique d'assemblage
-  du runtime final (packages/agent/gateway, « Phase 3 » du `PLAN.md`) devra INTERDIRE cette
-  injection hors tests. Restriction d'API différée jusqu'à l'assemblage (rien ne consomme encore
-  `PolymarketClient` en prod).
-- **`placeOrder` cross-check params↔signé** (PALLAS-M10) : le payload signé doit correspondre à
-  l'intention déclarée (`side`, `tokenId`, montants à 1 unité 1e-6 près) avant tout appel réseau —
-  sinon `OrderMismatchError`.
+- **`isDryRun` injectable** (PALLAS-M17, ferme la réserve M10 et les audits v0.1/v0.2/v0.3) :
+  l'injection `isDryRun?: () => boolean` au constructeur `PolymarketClient` est désormais
+  **verrouillée par le mode test** — hors `PALLAS_TEST_MODE=1` (variable dédiée, non documentée
+  en usage production, activée globalement par les tests via `vitest.config.ts`), fournir ce
+  champ lève une erreur au constructeur. Un chemin de production standard ne peut plus instancier
+  un client en mode live que par le parcours opérateur : `applySafetyGates`/`disableDryRun('LIVE')`.
+- **`enableDryRun` hors package public** (PALLAS-M17) : `@pallas/core` n'exporte plus que
+  `isDryRun`/`getDryRunState`/`disableDryRun` (l'entrée opérateur explicite reste la confirmation
+  `"LIVE"`). `enableDryRun` reste en interne (tests + remise en simulation manuelle) : aucun chemin
+  de décision automatisé (agent/stratégie) ne doit pouvoir réarmer le dry-run.
+- **`placeOrder` cross-check : intention canonique** (PALLAS-M17) : `params` DOIT correspondre au
+  `signed.order` sur `marketId` (= **l'actif CLOB**, égal à `tokenId`), `tokenId` (**obligatoire**),
+  `side` et les montants recalculés avec l'**algorithme officiel de rounding par tick** de
+  `py-clob-client-v2` (tolérance 1 unité 1e-6). Toute divergence → `OrderMismatchError` avant tout
+  appel réseau. Limite assumée : le prix et la taille ne sont pas signés directement — plusieurs
+  couples (prix, taille) peuvent produire les mêmes entiers arrondis ; la vérification porte donc
+  sur l'identité `marketId`/`tokenId`/`side` et les flux monétaires the rounding officiel.
 - **`PALLAS_RISK_BIN`** (PALLAS-M10) : variable d'env vérifiée par `isRegularExecutable` (fichier
   régulier + bit x, après résolution des symlinks, — mêmes règles que bwrap résolu par la sandbox)
   avant tout `spawn`. Un dossier ou un symlink vers un fichier non exécutable est rejeté

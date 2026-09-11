@@ -37,6 +37,7 @@
 > | `PALLAS-M14` | Réconciliation des ordres : getOpenOrders/getOrder, gate de scope (RECONCILING), cancel-all sur kill switch, défense en profondeur au point d'émission | ✅ clôturée 2026-09-11 |
 > | `PALLAS-M15` | Risque de portefeuille : exposition réelle cumulée + concentration par marché (F-04), limites hors stratégie (P0-03), circuit breaker HalfOpen restrictif (P0-02), VaR/CVaR INSUFFICIENT_DATA (F-08), garde stale-price | ✅ clôturée 2026-09-11 |
 > | `PALLAS-M16` | Ledger inviolable : vérification obligatoire fail-stop (absent≠tronqué≠rupture), lock/fsync M13 réutilisé, signature Ed25519 séparée (checkpoint `.sig`, ancrage préfixe, mode strict `PALLAS_LEDGER_PUB_KEY`), schéma d'événement enrichi (correlation_id, http_status, intent_hash, attempt, timestamps), Observatory `SIGNED/UNSIGNED` | ✅ clôturée 2026-09-11 |
+> | `PALLAS-M17` | Autorités indépendantes : `isDryRun` verrouillé hors `PALLAS_TEST_MODE=1`, `enableDryRun` hors package, intention canonique (tokenId obligatoire + marketId précisé + égalité triple), rounding officiel par tick (port py-clob-client-v2), rejet `signatureType` ≠ EOA à la construction | ✅ clôturée 2026-09-11 |
 
 > **Decision technique clé (Rust via Nix, pas NAPI-RS)**
 > Le risk engine est critique (decide si un trade est execute) : on le veut en Rust pour la surete memoire
