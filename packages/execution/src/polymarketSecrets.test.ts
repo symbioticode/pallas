@@ -1,11 +1,15 @@
 import { test, expect } from 'vitest';
+import { writeFileSync, mkdtempSync, chmodSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   encryptPolymarketSecrets,
   decryptPolymarketSecrets,
   loadPolymarketSecrets,
+  loadPolymarketSecretsFromFile,
   MissingPolymarketSecretsError,
 } from './polymarketSecrets.js';
-import { MissingCredentialKeyError, CredentialDecryptError, encryptObject } from '@pallas/core';
+import { MissingCredentialKeyError, CredentialDecryptError, encryptObject, SecretFilePermissionsError } from '@pallas/core';
 import type { AppConfig } from '@pallas/core';
 
 const PASS = 'test-passphrase-123!';
@@ -74,4 +78,32 @@ test('loadPolymarketSecrets lit vault via config (passphrase depuis PALLAS_CREDE
 test("loadPolymarketSecrets sans cle config => MissingCredentialKeyError; sans vault => throw", () => {
   expect(() => loadPolymarketSecrets(cfg(''), 'v2:aa:bb:cc:dd')).toThrow(MissingCredentialKeyError);
   expect(() => loadPolymarketSecrets(cfg(), '')).toThrow(/Vault Polymarket absent/);
+});
+
+// ------------------ PALLAS-M19 — loadPolymarketSecretsFromFile ------------------
+
+function vaultFile(mode: number): { path: string; vault: string; dir: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'pallas-vault-'));
+  const path = join(dir, 'vault.bin');
+  const vault = encryptPolymarketSecrets(PASS, SECRETS);
+  writeFileSync(path, vault);
+  try { chmodSync(path, mode); } catch { /* vfs may ignore chmod */ }
+  return { path, vault, dir };
+}
+
+test('M19: loadPolymarketSecretsFromFile autorise un vault 0600 et retourne les secrets', async () => {
+  const { path, dir } = vaultFile(0o600);
+  const secrets = await loadPolymarketSecretsFromFile(cfg(), path);
+  expect(secrets.apiKey).toBe(SECRETS.apiKey);
+  expect(secrets.walletPrivateKey).toBe(SECRETS.walletPrivateKey);
+});
+
+test('M19: loadPolymarketSecretsFromFile rejette un vault 0644 (permissions trop larges)', async () => {
+  const { path } = vaultFile(0o644);
+  await expect(loadPolymarketSecretsFromFile(cfg(), path)).rejects.toBeInstanceOf(SecretFilePermissionsError);
+});
+
+test('M19: loadPolymarketSecretsFromFile sans cle config rejette avant meme la lecture fichier', async () => {
+  const { path } = vaultFile(0o600);
+  await expect(loadPolymarketSecretsFromFile(cfg(''), path)).rejects.toBeInstanceOf(MissingCredentialKeyError);
 });

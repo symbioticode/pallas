@@ -3,7 +3,7 @@
  *
  * Lecons de CloddsBot corrigees :
  *  - CloddsBot: si la cle est absente, warning silencieux + operation echoue plus tard.
- *    Ici : fail-closed — on throw immédiatement au demarrage.
+ *    Ici : fail-closed — on throw immediatement au demarrage.
  *  - CloddsBot: clearance v1 (aes-256-cbc) supportee => migration jamais terminee.
  *    Ici : un seul format v2, pas de legacy.
  *  - CloddsBot: cle privée lue et jamais zeroée en memoire.
@@ -13,6 +13,7 @@
  */
 
 import * as crypto from 'node:crypto';
+import { stat } from 'node:fs/promises';
 
 const ALGORITHM = 'aes-256-gcm';
 const VERSION_PREFIX = 'v2';
@@ -131,4 +132,46 @@ export function decryptObject<T>(key: CredentialKey, payload: string): T {
   const parsed = JSON.parse(plaintext) as T;
   // JSON.parse copie la string en memoire; on zeroe le buffer d'origine.
   return parsed;
+}
+
+// ---------------------------------------------------------------------------
+// PALLAS-M19 — Garde de permissions pour tout fichier contenant un secret
+// ---------------------------------------------------------------------------
+
+export class SecretFilePermissionsError extends Error {
+  constructor(filePath: string, actualMode: string, expected: string) {
+    super(
+      `Refus de lire ${filePath} : permissions trop larges (${actualMode}, attendu ${expected}). ` +
+        'Corriger avec: chmod 600 <fichier>',
+    );
+    this.name = 'SecretFilePermissionsError';
+  }
+}
+
+/**
+ * Vérifie les permissions d'un fichier de secret AVANT lecture.
+ *
+ * Linux/NixOS uniquement (mode `st.mode`位 POSIX). Vérifie que les bits
+ * groupe/autres sont désactivés (`mode & 0o077 === 0`). Le mode attendu par
+ * défaut est `0600` (propriétaire en lecture/écriture uniquement) — cohérent
+ * avec la procédure de `docs/PHASE-2.2-procedure.md` (chmod 600 sur secrets).
+ *
+ * @param filePath chemin absolu ou relatif du fichier à vérifier
+ * @param expectedMode octal mode attendu (défaut 0o600)
+ * @throws SecretFilePermissionsError si les permissions sont trop larges
+ */
+export async function assertFilePermissions(filePath: string, expectedMode = 0o600): Promise<void> {
+  let fileStat: Awaited<ReturnType<typeof stat>>;
+  try {
+    fileStat = await stat(filePath);
+  } catch (err) {
+    // fichier absent ≠ permissions larges : propager l'erreur de lecture originale
+    throw err;
+  }
+  const mode = fileStat.mode & 0o777;
+  if (mode & ~expectedMode) {
+    const actualOctal = '0' + (mode >>> 0).toString(8);
+    const expectedOctal = '0' + (expectedMode >>> 0).toString(8);
+    throw new SecretFilePermissionsError(filePath, actualOctal, expectedOctal);
+  }
 }

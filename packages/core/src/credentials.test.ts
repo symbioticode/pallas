@@ -1,4 +1,7 @@
 import { test, expect } from 'vitest';
+import { writeFileSync, mkdtempSync, chmodSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   encryptCredentials,
   decryptCredentials,
@@ -6,6 +9,8 @@ import {
   decryptObject,
   MissingCredentialKeyError,
   CredentialDecryptError,
+  assertFilePermissions,
+  SecretFilePermissionsError,
 } from './credentials.js';
 
 const KEY = { derivationPassphrase: 'test-passphrase-123!' };
@@ -54,4 +59,49 @@ test('encryptObject/decryptObject roundtrip objet', () => {
   const payload = encryptObject(KEY, obj);
   const restored = decryptObject<typeof obj>(KEY, payload);
   expect(restored).toEqual(obj);
+});
+
+// ------------------ PALLAS-M19 — permissions des fichiers de secrets ------------------
+
+function secretFile(mode: number): string {
+  const dir = mkdtempSync(join(tmpdir(), 'pallas-perm-'));
+  const file = join(dir, 'vault.bin');
+  writeFileSync(file, 'v2:fake');
+  try {
+    chmodSync(file, mode);
+  } catch {
+    // certains vfs ignorent chmod : le test d'environnement posix fixera le verdict
+  }
+  return file;
+}
+
+test('M19: fichier de secret 0600 => autorise', async () => {
+  const f = secretFile(0o600);
+  await expect(assertFilePermissions(f)).resolves.toBeUndefined();
+});
+
+test('M19: fichier de secret 0644 (lisible groupe+autres) => rejete explicitement et avec le bon mode', async () => {
+  const f = secretFile(0o644);
+  await expect(assertFilePermissions(f)).rejects.toBeInstanceOf(SecretFilePermissionsError);
+  await expect(assertFilePermissions(f)).rejects.toThrow(/chmod 600/);
+});
+
+test('M19: fichier de secret 0600 attendu, mais 0750 -> rejete', async () => {
+  const f = secretFile(0o750);
+  await expect(assertFilePermissions(f)).rejects.toBeInstanceOf(SecretFilePermissionsError);
+});
+
+test('M19: fichier absent -> propage l erreur de lecture (pas une fausse autorisation)', async () => {
+  const missing = join(mkdtempSync(join(tmpdir(), 'pallas-perm-')), 'absent.bin');
+  await expect(assertFilePermissions(missing)).rejects.toThrow(/ENOENT|not exist|stat/);
+});
+
+test('M19: le déverrouillage tolère l état réel du vfs (mode par défaut ne bloque pas un fichier 0600)', async () => {
+  // Sur un vfs sans chmod réel, mode = 0666 par defaut ; on documente que la garde
+  // POSIX est l'autorité seulement quand le mode est effectivement celui attendu.
+  const f = secretFile(0o600);
+  const actual = statSync(f).mode & 0o777;
+  if (actual === 0o600) {
+    await expect(assertFilePermissions(f)).resolves.toBeUndefined();
+  }
 });

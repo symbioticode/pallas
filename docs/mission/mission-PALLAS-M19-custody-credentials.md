@@ -5,7 +5,7 @@ Mission ID : PALLAS-M19
 Date de création : 2026-09-10
 Auteur / Agent : Claude (planification) — exécution par agent de code au choix
 Projet : Pallas
-Statut : ACTIF — 🟡 Moyenne avant tout capital réel, 🔴 Critique dès qu'une clé financée est
+Statut : CLOTURÉE (2026-09-11) — preuve dans `mission-PALLAS-M19-journal.md`. 🟡 Moyenne avant tout capital réel, 🔴 Critique dès qu'une clé financée est
 introduite (qualification reprise explicitement de `AUDIT-PALLAS-v0.3.md` §7)
 Source de vérité : `AUDIT-PALLAS-v0.3.md` (F-09, section 7) + `AUDIT-PALLAS-v0.1.md` (PALLAS-M05,
 déjà partiellement traitée) + `packages/core/src/credentials.ts` +
@@ -89,14 +89,14 @@ stade du projet (à documenter comme limite assumée).
    l'auteur du code (test de lisibilité).
 
 ## 7. Critères de succès
-- [ ] Le chargement d'un fichier de secret avec des permissions trop larges est rejeté
+- [x] Le chargement d'un fichier de secret avec des permissions trop larges est rejeté
       explicitement, testé (sur l'OS cible documenté).
-- [ ] La séparation (ou son absence assumée) entre signature d'ordre et dérivation d'API key est
+- [x] La séparation (ou son absence assumée) entre signature d'ordre et dérivation d'API key est
       documentée explicitement dans `docs/SECURITY.md`, avec le risque résiduel nommé.
-- [ ] Le scénario de rotation complet a été exécuté au moins une fois sur des credentials de test,
+- [x] Le scénario de rotation complet a été exécuté au moins une fois sur des credentials de test,
       avec preuve dans le journal.
-- [ ] Un runbook "clé compromise" existe, daté, et a été relu comme exécutable.
-- [ ] Aucune régression sur les tests existants.
+- [x] Un runbook "clé compromise" existe, daté, et a été relu comme exécutable.
+- [x] Aucune régression sur les tests existants.
 
 ## 8. Interdictions
 - Ne jamais utiliser de clés/fonds réels pour tester la rotation ou la révocation dans cette

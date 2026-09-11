@@ -2,7 +2,8 @@
 
 Statut : document complété par PALLAS-M03 (sandbox), PALLAS-M05 (mémoire), PALLAS-M06
 (CI + reporting + réserves closes + annexe de vérification réelle), PALLAS-M16 (signature
-séparée du ledger) et PALLAS-M17 (autorités indépendantes + intention canonique).
+séparée du ledger), PALLAS-M17 (autorités indépendantes + intention canonique) et PALLAS-M19
+(custody credentials : permissions, rotation testée, runbook).
 Date : 2026-09-11.
 
 ## Signalement de vulnérabilité
@@ -28,6 +29,8 @@ limites sont documentées ci-dessous et dans les rapports de mission `docs/missi
 | `isDryRun` verrouillé : injection réservée tests, `enableDryRun` hors package | ✔ | M17 |
 | Intention canonique : `tokenId` obligatoire, `marketId` précis, rounding officiel | ✔ | M17 |
 | Rejet `signatureType` ≠ EOA à la construction | ✔ | M17 |
+| Permissions fichiers secrets : `chmod 600` appliqué par le code au chargement (Linux/NixOS) | ✔ | M19 |
+| Rotation credentials testée (scénario complet sur credentials de test) + runbook clé compromise | ✔ | M19 |
 | CI active (npm + cargo, audit) | ✔ | M06 |
 
 ## Sandbox bwrap (phase 1.3) — portée réelle de la protection
@@ -162,3 +165,55 @@ fail-closed) et la réduction du temps de vie des copies Buffer.
 mémoire native verrouillée (`mlock`) permettrait un vrai zeroing + swap protection pour les
 clés — à réserver aux clés privées et à sécuriser par une preuve de mise en œuvre (n'ajouter
 aucune dépendance native au build NixOS sans cette preuve).
+
+## Custody des credentials — permissions, séparation, rotation (PALLAS-M19)
+
+### Permissions de fichiers (appliquées par le code, plus seulement documentées)
+
+Tout fichier contenant un secret (vault chiffré `v2`, fichier de passphrase) doit être en
+`0600` (propriétaire seul). Le chargement REFUSE explicitement les fichiers trop larges :
+
+- `assertFilePermissions(path, mode = 0o600)` (`packages/core/src/credentials.ts`) vérifie les
+  bits groupe/autres POSIX avant toute lecture et lève `SecretFilePermissionsError` sinon
+  (message avec `chmod 600` correctif).
+- `loadPolymarketSecretsFromFile(config, vaultPath)` (`packages/execution/src/polymarketSecrets.ts`)
+  est le chemin de production recommandé pour un vault sur disque : garde de permissions →
+  lecture → déchiffrement. Testé sur Linux/NixOS (uniquement — Windows non couvert, limite
+  assumée).
+
+### Séparation signature d'ordres / dérivation d'API key — absence assumée
+
+**État réel : il n'existe PAS de séparation de process.** Dans `@pallas/execution`, les mêmes
+primitives dérivent la clé de signature API (`clobAuth.ts`) et
+signent les ordres CLOB (EIP-712, `polymarketSigner.ts`) **dans le même process Node**, après
+déchiffrement du vault partagé (`polymarketSecrets.ts`). Une compromission du process expose les
+deux surfaces d'un coup (API + wallet) ainsi que les secrets en clair en mémoire.
+
+Ce qui EST en place aujourd'hui pour limiter la surface :
+- le vault est chiffré au repos (AES-256-GCM) et sa passphrase n'est jamais stockée à côté ;
+- la séparation **effective** qui existe est celle du **ledger** : la clé Ed25519 qui signe les
+  checkpoints n'est pas montée par le process écrivain (PALLAS-M16) ;
+- les clés CLOB/wallet transitent par des fonctions délimitées qui ne partagent pas d'état
+  mutable au-delà du strict nécessaire (préparant une séparation de process future sans
+  l'implémenter aujourd'hui).
+
+Risque résiduel **accepté et documenté** : tant que le process unique signe et dérive dans le
+même espace mémoire, un heap dump compromis révèle les deux jeux de clés + les secrets
+déchiffrés. Isoler la dérivation d'API key (générée côté client CLOB, jamais stockée à plat)
+dans un process dédié ou un KMS reste une piste — hors budget PALLAS-M19, à ne pas présenter
+comme fait.
+
+### Rotation et révocation
+
+- **Scénario de rotation** : exécuté réellement sur credentials de TEST (jamais réels) — voir
+  `docs/mission/mission-PALLAS-M19-journal.md` pour les commandes et sorties :
+  1. révoquer l'ancienne clé API côté CLOB (action plateforme, hors `@pallas`);
+  2. dériver une nouvelle clé API (action plateforme/portefeuille);
+  3. re-chiffrer le vault avec une **nouvelle passphrase** `openssl rand -hex 32`;
+  4. vérifier : ancien vault indéchiffrable, nouveau vault chiffre/déchiffre, permissions 0600.
+- **Runbook clé compromise** : procédure opérationnelle datée dans `docs/RUNBOOK-key-compromise.md`
+  (cancel-all dépend de PALLAS-M14, révocation API, rotation, vérification ledger).
+- **Limite assumée** : pas d'intégration KMS/HSM/gestionnaire de secrets — la passphrase et les
+  clés transitent par env/fichiers locaux. Pas de séparation de process (voir plus haut). Ces
+  limites sont assumées pour le stade du projet, documentées, et ne sont pas présentées comme
+  couvertes.

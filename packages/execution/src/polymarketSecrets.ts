@@ -17,8 +17,10 @@ import {
   decryptObject,
   MissingCredentialKeyError,
   CredentialDecryptError,
+  assertFilePermissions,
 } from '@pallas/core';
 import type { AppConfig } from '@pallas/core';
+import { readFile } from 'node:fs/promises';
 
 export interface PolymarketSecrets {
   apiKey: string;
@@ -77,4 +79,18 @@ export function loadPolymarketSecrets(config: AppConfig, vaultCiphertext: string
     throw new Error('Vault Polymarket absent : fournir PALLAS_POLYMARKET_VAULT (chiffre v2) en dry-run ou par un gestionnaire de secrets.');
   }
   return decryptPolymarketSecrets(config.credentials.key, vaultCiphertext);
+}
+
+/**
+ * PALLAS-M19 — charge un vault SECRET depuis un FICHIER, avec garde de
+ * permissions avant lecture : `chmod 600` (ou plus strict) exigé, rejet
+ * explicite (`SecretFilePermissionsError`) si les bits groupe/autres sont
+ * actifs. C'est le chemin de production RECOMMANDÉ pour un vault sur disque —
+ * jamais une lecture brute sans vérification (l'ancien chemin documenté comme
+ * procédure manuelle est désormais appliqué par le code).
+ */
+export async function loadPolymarketSecretsFromFile(config: AppConfig, vaultPath: string): Promise<PolymarketSecrets> {
+  await assertFilePermissions(vaultPath);
+  const ciphertext = (await readFile(vaultPath, 'utf8')).trim();
+  return loadPolymarketSecrets(config, ciphertext);
 }
