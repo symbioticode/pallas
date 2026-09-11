@@ -1,34 +1,39 @@
 /**
- * Orchestrateur minimal d'intégration bout-en-bout (PALLAS-M12).
+ * Orchestrateur minimal d'intégration bout-en-bout (PALLAS-M12, durci PALLAS-M13).
  *
  * PAS un serveur, PAS un gateway, PAS une UI : un script/fonction qui boucle
  * sur = un cycle de pipeline complet. Il relie pour la PREMIÈRE fois :
  *
  *   ReferenceStrategy (signal) -> sanitizeInput (texte externe) ->
- *   validateTradeWithState (état persistant fichier JSON) -> placeOrder
- *   (dry-run strict, blocage attendu) -> ledger append-only (chaque étape).
+ *   validateTradeWithState (état persistant) -> placeOrder (dry-run strict,
+ *   blocage attendu) -> ledger append-only (chaque étape).
  *
- * Contraintes de la mission (§3, §6, §8) respectées à la lettre :
- *  - Aucune capacité live nouvelle ; le dry-run reste le comportement par
- *    défaut (flag global @pallas/core). placeOrder en dry-run THROW -> on
- *    journalise CE blocage comme résultat attendu, jamais de retry.
- *  - Un rejet du risk engine est RESPECTÉ : pas d'appel à placeOrder, pas de
- *    re-tentative automatique.
- *  - Le payload signé est construit POUR LA FORME (le process signe puis
- *    s'arrête au blocage dry-run) — aucune clé live nécessaire ; une clé
- *    éphémère est générée si PALLAS_REF_PK n'est pas fournie.
- *  - La limite de persistance (fichier JSON local, pas de base de données)
- *    est une décision DÉLIBÉRÉE de la mission (§6.4).
+ * PALLAS-M13 — transaction durable :
+ *  - l'état vit dans `DurableStateStore` : document versionné + checksummé,
+ *    lecture FAIL-STOP (corruption = arrêt, jamais d'état neuf silencieux),
+ *    écriture atomique + fsync + verrou interprocessus (via @pallas/core).
+ *  - chaque décision/ordre porte un `correlationId` unique et un cycle de vie
+ *    explicite DECIDED → SUBMITTING → SUBMITTED/AMBIGUOUS → ACKED → TERMINAL.
+ *  - AUCUNE émission tant qu'une transition d'état n'est pas durablement
+ *    écrite : DECIDED est confié au disque avant la construction du payload,
+ *    SUBMITTING avant l'appel réseau (vérifié par tests de crash).
+ *
+ * Contraintes de mission respectées : jamais de retry après exécution ;
+ * rejet respecté (pas d'appel placeOrder) ; dry-run reste bloquant (flag
+ * global @pallas/core) ; zero-width / menaces signalées mais jamais soumises ;
+ * `signatureSchemaValidated` jamais touché (le payload signé reste "de forme").
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 
 import { sanitizeInput } from '@pallas/core';
 import { validateTradeWithState, type StateInput, type TradeRequest } from '@pallas/risk';
 import {
+  AmbiguousOrderError,
   PolymarketClient,
   buildSignedOrderPayload,
   privateKeyToAddress,
@@ -37,6 +42,12 @@ import {
 import { FileLedger } from '@pallas/ledger';
 
 import { ReferenceStrategy, type ReferenceSignal } from './reference.js';
+import {
+  DurableStateStore,
+  newLifecycle,
+  transitionLifecycle,
+  type OrderIntent,
+} from './durable-state.js';
 
 export interface ReferenceLoopOptions {
   client: PolymarketClient;
@@ -51,6 +62,12 @@ export interface ReferenceLoopOptions {
   signer?: { address: string; privKey: Uint8Array | string };
   /** Texte externe à faire passer par sanitizeInput avant tout traitement. */
   externalText?: string | null;
+  /**
+   * Hook de SIMULATION DE CRASH (tests M13 uniquement) : le cycle jette
+   * `CrashSimulationError` après avoir rendu durable la transition donnée,
+   * ce qui figure un kill de process à cet instant précis.
+   */
+  crashAfter?: 'before_decided' | 'decided_written' | 'submitting_written' | 'acked_written' | null;
 }
 
 export interface CycleResult {
@@ -58,8 +75,18 @@ export interface CycleResult {
   signal: ReferenceSignal | null;
   allowed: boolean;
   rejected_by: string[];
+  correlation_id?: string | null;
+  lifecycle_status?: string | null;
   execution: 'dry_run_blocked' | 'execution_error' | 'execution_success' | 'not_attempted';
   ledgerRecords: number;
+}
+
+/** Erreur artificielle simulant un crash de process à un point de persistance. */
+export class CrashSimulationError extends Error {
+  constructor(public readonly crashPoint: string) {
+    super(`[simulation] crash du process au point ${crashPoint}`);
+    this.name = 'CrashSimulationError';
+  }
 }
 
 /** Construit le TradeRequest à partir du signal — valeurs neutres NON-prédictives. */
@@ -69,17 +96,12 @@ export function buildReferenceTradeRequest(
 ): TradeRequest {
   const estValue = Math.round(signal.price * signal.size * 100) / 100;
   const marketImpliedP = clamp01(signal.price);
-  // Conventions différentes : le moteur de risque attend "buy"/"sell" minuscules,
-  // la ReferenceStrategy (et Polymarket) n'émet que BUY en majuscules.
   return {
     market_id: signal.tokenId,
     side: 'buy',
     price: signal.price,
     quantity: signal.size,
     est_value_usd: estValue,
-    // AMORCES NEUTRES fixées (mission §1) : AUCUN paramètre optimisé, AUCUNE
-    // revendication de probabilité. `win_probability` reprend le PRIX DU MARCHÉ
-    // (probabilité implicite, "le marché est supposé correct") — pas un edge.
     win_probability: marketImpliedP,
     odds: 2.0,
     confidence: 0.5,
@@ -91,24 +113,6 @@ export function buildReferenceTradeRequest(
 
 function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
-}
-
-function loadState(path: string): StateInput {
-  try {
-    const raw = JSON.parse(readFileSync(path, 'utf8')) as unknown;
-    if (typeof raw === 'object' && raw !== null) {
-      return raw as StateInput;
-    }
-  } catch {
-    /* fichier absent ou corrompu -> état frais */
-  }
-  return { hist_pnls: [] };
-}
-
-function saveState(path: string, state: unknown): void {
-  const resolved = resolve(path);
-  mkdirSync(dirname(resolved), { recursive: true });
-  writeFileSync(resolved, JSON.stringify(state, null, 2) + '\n', 'utf8');
 }
 
 /**
@@ -154,47 +158,110 @@ export async function runReferenceCycle(
     payload: signal ? { ...signal, indicator_ms: indicatorMs } : { cycle, indicator_ms: indicatorMs },
   });
 
-  let allowed = false;
-  let rejected_by: string[] = [];
-  if (signal) {
-    const trade = buildReferenceTradeRequest(signal, opts);
-
-    // --- étape 3 : risk engine avec état persistant entre appels ---
-    const stateBefore = loadState(opts.statePath);
-    const riskStart = Date.now();
-    const { decision, state } = await validateTradeWithState(trade, stateBefore);
-    const riskMs = Date.now() - riskStart;
-    saveState(opts.statePath, state);
-    allowed = decision.allowed;
-    rejected_by = decision.rejected_by;
-
-    ledger.append({
-      event: 'risk_decision',
-      timestamp: new Date().toISOString(),
-      payload: {
-        trade,
-        decision,
-        state_after: state,
-        risk_ms: riskMs,
-        state_persisted: true,
-      },
-    });
-
-    // --- étape 4 : exécution (dry-run strict) ---
-    if (decision.allowed) {
-      const execution = await attemptPlaceOrder(opts, signal, trade, ledger);
-      return {
-        cycle,
-        signal,
-        allowed,
-        rejected_by,
-        execution,
-        ledgerRecords: ledger.length,
-      };
-    }
+  if (!signal) {
+    return { cycle, signal, allowed: false, rejected_by: [], execution: 'not_attempted', ledgerRecords: ledger.length };
   }
 
-  return { cycle, signal, allowed, rejected_by, execution: 'not_attempted', ledgerRecords: ledger.length };
+  const trade = buildReferenceTradeRequest(signal, opts);
+  const store = new DurableStateStore(opts.statePath);
+
+  // --- étape 3 : risk engine + écriture DURABLE de la décision (DECIDED) ---
+  // Lecture + validation + persist DECIDED sous UN SEUL verrou : personne ne
+  // peut écrire entre notre lecture d'état et l'enregistrement de la décision.
+  const riskStart = Date.now();
+  const outcome = await store.withLock(async (doc) => {
+    const { decision, state } = await validateTradeWithState(trade, doc.risk);
+    if (!decision.allowed) {
+      return { decision, state, lifecycle: null as Awaited<ReturnType<typeof newLifecycle>> | null };
+    }
+    // Fenêtre de crash 1 (audit §4.5) : "décision perdue avant persistance".
+    // Testé : au redémarrage, AUCUN ordre n'existe pour ce correlationId.
+    if (opts.crashAfter === 'before_decided') {
+      throw new CrashSimulationError('before_decided');
+    }
+    const correlationId = store.nextCorrelationId(doc);
+    const intent: OrderIntent = {
+      market_id: trade.market_id,
+      side: 'buy',
+      price: trade.price,
+      quantity: trade.quantity,
+      est_value_usd: trade.est_value_usd,
+    };
+    const lifecycle = newLifecycle(intent, { correlationId });
+    doc.risk = state;
+    doc.orders.push(lifecycle);
+    store.write(doc); // fsync + rename + verrou : DURABLE avant tout réseau
+    return { decision, state, lifecycle };
+  });
+  const riskMs = Date.now() - riskStart;
+
+  ledger.append({
+    event: 'risk_decision',
+    timestamp: new Date().toISOString(),
+    payload: {
+      trade,
+      decision: outcome.decision,
+      state_after: outcome.state,
+      risk_ms: riskMs,
+      state_persisted: true,
+      correlation_id: outcome.lifecycle?.correlationId ?? null,
+    },
+  });
+
+  if (!outcome.decision.allowed) {
+    return {
+      cycle,
+      signal,
+      allowed: false,
+      rejected_by: outcome.decision.rejected_by,
+      correlation_id: null,
+      lifecycle_status: null,
+      execution: 'not_attempted',
+      ledgerRecords: ledger.length,
+    };
+  }
+
+  const lifecycle = outcome.lifecycle!;
+
+  // Fenêtre de crash 2 : "état avancé sans preuve d'ordre" — DECIDED durable
+  // mais aucune émission. Au redémarrage : ordre DECIDED/order_id=null, jamais
+  // d'état neuf, jamais de ré-émission sans réconciliation (garde M14).
+  if (opts.crashAfter === 'decided_written') {
+    throw new CrashSimulationError('decided_written');
+  }
+
+  // --- transition SUBMITTING DURABLE avant tout appel réseau ---
+  await store.withLock((doc) => {
+    doc.orders = doc.orders.map((o) =>
+      o.correlationId === lifecycle.correlationId ? transitionLifecycle(o, { status: 'SUBMITTING' }) : o,
+    );
+    store.write(doc);
+  });
+
+  // Fenêtre de crash 3 : "ordre potentiellement réel sans trace locale".
+  // Au redémarrage : SUBMITTING, order_id=null → réconciliation REQUISE.
+  if (opts.crashAfter === 'submitting_written') {
+    throw new CrashSimulationError('submitting_written');
+  }
+
+  // --- étape 4 : exécution (dry-run strict) ---
+  const execution = await attemptPlaceOrder(opts, signal, trade, lifecycle, ledger, store);
+  return {
+    cycle,
+    signal,
+    allowed: true,
+    rejected_by: [],
+    correlation_id: lifecycle.correlationId,
+    lifecycle_status: latestStatus(store, lifecycle.correlationId),
+    execution,
+    ledgerRecords: ledger.length,
+  };
+}
+
+/** Statut courant du lifecycle (lecture fraîche du disque, fail-stop). */
+function latestStatus(store: DurableStateStore, correlationId: string): string {
+  const doc = store.read();
+  return doc.orders.find((o) => o.correlationId === correlationId)?.status ?? 'UNKNOWN';
 }
 
 /** Un SEUL appel à placeOrder, jamais de retry (mission §8 : respect strict). */
@@ -202,7 +269,9 @@ async function attemptPlaceOrder(
   opts: ReferenceLoopOptions,
   signal: ReferenceSignal,
   trade: TradeRequest,
+  lifecycle: { correlationId: string },
   ledger: FileLedger,
+  store: DurableStateStore,
 ): Promise<CycleResult['execution']> {
   const signer = opts.signer ?? ephemeralSigner();
   try {
@@ -219,26 +288,77 @@ async function attemptPlaceOrder(
       tokenId: signal.tokenId,
     };
     const res = await opts.client.placeOrder(params, signed);
+    await store.withLock((doc) => {
+      doc.orders = doc.orders.map((o) =>
+        o.correlationId === lifecycle.correlationId
+          ? transitionLifecycle(o, { status: 'ACKED', order_id: res.orderId, outcome: 'acked' })
+          : o,
+      );
+      store.write(doc);
+    });
+    // Fenêtre de crash 4 : ordre réel reconnu (ACKED durable) mais trace ledger
+    // pas encore écrite. Au redémarrage : ACKED + order_id → réconciliation
+    // possible (M14) ; jamais de ré-émission sur le même correlationId.
+    if (opts.crashAfter === 'acked_written') {
+      throw new CrashSimulationError('acked_written');
+    }
     ledger.append({
       event: 'execution_success',
       timestamp: new Date().toISOString(),
-      payload: { dryRun: res.dryRun, orderId: res.orderId },
+      payload: { dryRun: res.dryRun, orderId: res.orderId, correlation_id: lifecycle.correlationId },
     });
     return 'execution_success';
   } catch (err) {
+    // Une simulation de crash ne doit JAMAIS être absorbée comme erreur d'exécution.
+    if (err instanceof CrashSimulationError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes('blocked in dry-run')) {
+      // L'ordre n'a JAMAIS atteint le réseau (blocage dans placeOrder, avant
+      // fetch) : on revient à un état véridique — DECIDED, outcome expliqué.
+      await store.withLock((doc) => {
+        doc.orders = doc.orders.map((o) =>
+          o.correlationId === lifecycle.correlationId
+            ? transitionLifecycle(o, { status: 'DECIDED', outcome: 'dry_run_blocked' })
+            : o,
+        );
+        store.write(doc);
+      });
       ledger.append({
         event: 'execution_dry_run_blocked',
         timestamp: new Date().toISOString(),
-        payload: { blocked_by: 'polymarketClient.placeOrder', expects: 'dry-run' },
+        payload: {
+          blocked_by: 'polymarketClient.placeOrder',
+          expects: 'dry-run',
+          correlation_id: lifecycle.correlationId,
+        },
       });
       return 'dry_run_blocked';
+    }
+    if (err instanceof AmbiguousOrderError) {
+      // Réseau contacté, résultat inconnu : état AMBIGUOUS, réconciliation
+      // requise (M14) avant toute nouvelle émission sur ce scope.
+      await store.withLock((doc) => {
+        doc.orders = doc.orders.map((o) =>
+          o.correlationId === lifecycle.correlationId
+            ? transitionLifecycle(o, { status: 'AMBIGUOUS', outcome: 'pending_reconciliation' })
+            : o,
+        );
+        store.write(doc);
+      });
+    } else {
+      await store.withLock((doc) => {
+        doc.orders = doc.orders.map((o) =>
+          o.correlationId === lifecycle.correlationId
+            ? transitionLifecycle(o, { status: 'DECIDED', outcome: 'execution_error' })
+            : o,
+        );
+        store.write(doc);
+      });
     }
     ledger.append({
       event: 'execution_error',
       timestamp: new Date().toISOString(),
-      payload: { error: message.slice(0, 500) },
+      payload: { error: message.slice(0, 500), correlation_id: lifecycle.correlationId },
     });
     return 'execution_error';
   }
@@ -276,6 +396,7 @@ async function main(): Promise<void> {
   const client = new PolymarketClient();
   const strategy = new ReferenceStrategy({ tokenIds, buyThreshold: threshold, size });
   const ledger = FileLedger.load(ledgerPath);
+  const store = new DurableStateStore(statePath);
   const signer =
     pkHex.length > 0
       ? {
@@ -284,7 +405,19 @@ async function main(): Promise<void> {
         }
       : undefined;
 
-  console.log(JSON.stringify({ event: 'run_start', cycles, token_ids: tokenIds, threshold, size, bankroll_usd: bankroll, max_order_usd: maxOrder, max_drawdown_usd: maxDrawdown, signer: signer ? signer.address : 'ephemeral(forme)' }));
+  console.log(
+    JSON.stringify({
+      event: 'run_start',
+      cycles,
+      token_ids: tokenIds,
+      threshold,
+      size,
+      bankroll_usd: bankroll,
+      max_order_usd: maxOrder,
+      max_drawdown_usd: maxDrawdown,
+      signer: signer ? signer.address : 'ephemeral(forme)',
+    }),
+  );
 
   for (let c = 1; c <= cycles; c += 1) {
     ledger.append({ event: 'cycle_start', timestamp: new Date().toISOString(), payload: { cycle: c } });
@@ -302,15 +435,15 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(result));
   }
 
-  // Vérification finale sur une RECHARGE fraîche du fichier : la chaîne vérifiée
-  // est exactement celle persistée sur disque, pas un snapshot en mémoire.
   const diskLedger = FileLedger.load(ledgerPath);
   const verdict = diskLedger.verify();
+  const durableCheck = store.read().version;
   console.log(
     JSON.stringify({
       event: 'run_end',
       ledger_entries: diskLedger.length,
       ledger_verify: verdict,
+      state_version: durableCheck,
     }),
   );
 }

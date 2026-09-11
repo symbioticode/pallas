@@ -22,7 +22,8 @@
     "@pallas/core": "*",
     "@pallas/execution": "*",
     "@pallas/ledger": "*",
-    "@pallas/risk": "*"
+    "@pallas/risk": "*",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

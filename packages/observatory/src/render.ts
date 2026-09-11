@@ -21,6 +21,19 @@ export function renderDashboard(snapshot: ObservatorySnapshot): string {
     <div class="pipeline"><span>MARKET</span><i>→</i><span>SIGNAL</span><i>→</i><span>RISK</span><i>→</i><strong>${esc(execution)}</strong><i>→</i><span>LEDGER</span></div>
     <dl><div><dt>REFERENCE LOOP</dt><dd>${badge(snapshot.system.loop, snapshot.system.loop === 'RUNNING' ? 'allow' : snapshot.system.loop === 'STOPPED' ? 'neutral' : 'warning')}</dd></div><div><dt>LAST EVENT AGE</dt><dd>${snapshot.system.loopAgeSeconds === null ? 'UNKNOWN' : `${snapshot.system.loopAgeSeconds}s`}</dd></div><div><dt>LEDGER</dt><dd>${badge(snapshot.system.ledger)}</dd></div><div><dt>ENTRIES</dt><dd>${snapshot.system.ledgerEntries}</dd></div><div><dt>LAST EVENT</dt><dd>${esc(snapshot.system.lastEventAt)}</dd></div></dl>
   </section>
+  <section class="panel state"><header><h2>DURABILITY · STATE</h2>${badge(caseLabel(snapshot.durability.format, snapshot.durability.integrity))}</header>
+    <dl class="metrics">
+      <div><dt>FORMAT</dt><dd>${esc(snapshot.durability.version === null ? snapshot.durability.format : snapshot.durability.version)}</dd></div>
+      <div><dt>INTEGRITY</dt><dd>${badge(snapshot.durability.integrity, snapshot.durability.integrity === 'OK' ? 'allow' : 'warning')}</dd></div>
+      <div><dt>ORDERS RECORDED</dt><dd>${snapshot.durability.orderCount}</dd></div>
+    </dl>
+    <table><thead><tr><th>CORRELATION</th><th>STATUS</th><th>ORDER ID</th><th>MARKET</th></tr></thead><tbody>${
+      snapshot.durability.orders.length
+        ? snapshot.durability.orders.map((o) => `<tr><td class="mono">${esc(shortUuid(o.correlationId))}</td><td>${badge(o.status, o.status === 'ACKED' ? 'allow' : o.status === 'SUBMITTING' || o.status === 'AMBIGUOUS' ? 'warning' : 'neutral')}</td><td>${esc(o.orderId ?? '—')}</td><td>${esc(shortToken(o.marketId))}</td></tr>`).join('')
+        : '<tr><td colspan="4">NO DECISION RECORDED</td></tr>'
+    }</tbody></table>
+    <p class="timestamp">${snapshot.durability.notes.length ? snapshot.durability.notes.map((note) => esc(note)).join(' · ') : 'État transactionnel cohérent'}</p>
+  </section>
   <section class="panel market"><header><h2>MARKET</h2>${badge(snapshot.market.status)}</header>
     <div class="market-name">${esc(snapshot.market.question ?? 'MARKET UNKNOWN')}${snapshot.market.outcome ? ` — ${esc(snapshot.market.outcome)}` : ''}</div><div class="token" title="${esc(snapshot.market.tokenId)}">TOKEN ${esc(shortToken(snapshot.market.tokenId))}</div>
     <dl class="metrics"><div><dt>BEST BID</dt><dd>${value(snapshot.market.bestBid)}</dd></div><div><dt>BEST ASK</dt><dd>${value(snapshot.market.bestAsk)}</dd></div><div><dt>MID</dt><dd>${value(snapshot.market.mid)}</dd></div><div><dt>SPREAD</dt><dd>${value(snapshot.market.spread)}</dd></div></dl>
@@ -41,6 +54,14 @@ export function renderDashboard(snapshot: ObservatorySnapshot): string {
 }
 
 function shortToken(token: string | null): string { return token ? token.length > 22 ? `${token.slice(0, 10)}…${token.slice(-10)}` : token : 'UNKNOWN'; }
+function shortUuid(id: string): string { return id ? (id.length > 12 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id) : 'UNKNOWN'; }
+function caseLabel(format: string, integrity: string): string {
+  if (integrity === 'CORRUPT') return 'CORRUPT';
+  if (format === 'V2') return 'V2 OK';
+  if (format === 'LEGACY_V1') return 'LEGACY V1';
+  if (format === 'MISSING') return 'MISSING';
+  return format;
+}
 function circuitState(input: unknown): string { return input && typeof input === 'object' && 'state' in input ? String((input as { state: unknown }).state) : 'UNKNOWN'; }
 function renderSignalChart(history: ObservatorySnapshot['strategy']['history']): string {
   if (history.length < 2) return '<p class="chart-empty">HISTORIQUE INSUFFISANT — 2 SIGNAUX REQUIS</p>';

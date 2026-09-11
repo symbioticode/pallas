@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderDashboard } from './render.js';
-import { buildSnapshot, redactSecrets } from './snapshot.js';
+import { buildSnapshot, readDurableState, redactSecrets } from './snapshot.js';
 import { createReadOnlyRouter } from './server.js';
 
 function canonical(value: unknown): string {
@@ -137,5 +137,66 @@ describe('Observatory rendering', () => {
     const snapshot = await buildSnapshot({ rootDir: dir, ledgerPath: join(dir, 'ledger.json'), riskStatePath: join(dir, 'missing-risk.json'), fetcher: noNetwork, commit: null });
     expect(snapshot.cycle.status).toBe('NONE');
     expect(renderDashboard(snapshot)).toContain('NO CYCLE RECORDED');
+  });
+});
+
+describe('Observatory — état durable v2 (PALLAS-M13)', () => {
+  // reproduit checksumOfState de @pallas/strategy : canonical({version, risk,
+  // orders, meta}) avec meta absent ⇒ undefined sérialise en "undefined".
+  function checksumV2(risk: Record<string, unknown>, orders: unknown[]): string {
+    return createHash('sha256').update(canonical({ version: 2, risk, orders, meta: undefined })).digest('hex');
+  }
+
+  function stateV2(risk: Record<string, unknown>, orders: unknown[] = []): string {
+    return JSON.stringify({ version: 2, checksum: checksumV2(risk, orders), risk, orders });
+  }
+
+  const NEUTRAL_RISK = { hist_pnls: [1, -1], kill_switch_engaged: false, circuit_breaker: { state: 'Closed' }, volatility: { window: [], baseline: null } };
+
+  it('reads a valid V2 doc: integrity OK, risk exposed, orders reported', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-observatory-'));
+    writeFileSync(join(dir, 'risk.json'), stateV2(NEUTRAL_RISK));
+    const report = readDurableState(join(dir, 'risk.json'));
+    expect(report.format).toBe('V2');
+    expect(report.integrity).toBe('OK');
+    expect(report.version).toBe(2);
+    expect(report.risk?.hist_pnls).toEqual([1, -1]);
+  });
+
+  it('detects a tampered V2 doc (checksum mismatch) and refuses to bless the risk', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-observatory-'));
+    const doc = JSON.parse(stateV2(NEUTRAL_RISK)) as { risk: Record<string, unknown> };
+    (doc.risk as Record<string, unknown>).hist_pnls = [999]; // falsification silencieuse
+    writeFileSync(join(dir, 'risk.json'), JSON.stringify(doc));
+    const report = readDurableState(join(dir, 'risk.json'));
+    expect(report.integrity).toBe('CORRUPT');
+    expect(report.risk).toBeNull(); // falsifié ⇒ ne fait pas autorité
+    expect(report.notes.some((n) => n.includes('checksum mismatch'))).toBe(true);
+  });
+
+  it('flags legacy V1 and missing as distinct, honest formats', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-observatory-'));
+    writeFileSync(join(dir, 'risk.json'), JSON.stringify({ hist_pnls: [1], circuit_breaker: { state: 'Closed' } }));
+    expect(readDurableState(join(dir, 'risk.json')).format).toBe('LEGACY_V1');
+    expect(readDurableState(join(dir, 'absent.json')).format).toBe('MISSING');
+  });
+
+  it('renders the durability panel and reconciliation notes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-observatory-'));
+    writeFileSync(join(dir, 'ledger.json'), JSON.stringify({ root: 'pallas', entries: [] }));
+    writeFileSync(join(dir, 'risk.json'), stateV2(NEUTRAL_RISK, [{
+      correlationId: '11111111-2222-4333-8444-555555555555',
+      market_id: '1234567890', side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1,
+      intent_hash: 'a'.repeat(64), status: 'SUBMITTING', attempt: 1, order_id: null,
+      created_at: '2026-09-11T00:00:00Z', updated_at: '2026-09-11T00:00:00Z',
+    }]));
+    const snapshot = await buildSnapshot({ rootDir: dir, ledgerPath: join(dir, 'ledger.json'), riskStatePath: join(dir, 'risk.json'), fetcher: noNetwork, commit: null });
+    expect(snapshot.durability.format).toBe('V2');
+    expect(snapshot.durability.integrity).toBe('OK');
+    const html = renderDashboard(snapshot);
+    expect(html).toContain('DURABILITY · STATE');
+    expect(html).toContain('SUBMITTING');
+    expect(html).toContain('11111111…5555');
+    expect(html).toContain('reconciliation required');
   });
 });

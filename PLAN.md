@@ -33,6 +33,7 @@
 > | `PALLAS-M10` | Frontières résiduelles : `OrderMismatchError`, `PALLAS_RISK_BIN`, `deriveApiKey`, `isDryRun` | ✅ clôturée 2026-09-10 |
 > | `PALLAS-M11` | CI réelle documentée + `PLAN.md` propre | ✅ clôturée 2026-09-10 |
 > | `PALLAS-M12` | Stratégie de référence : intégration bout-en-bout dry-run (ledger chaîné, orchestrateur, reads réels) | ✅ clôturée 2026-09-10 |
+> | `PALLAS-M13` | Transaction durable décision→ordre→ack : persistance atomique (atomicfs+lock+fsync), fail-stop, machine d'états, correlationId, 4 crash-windows, concurrence, Observatory v2 | ✅ clôturée 2026-09-11 |
 
 > **Decision technique clé (Rust via Nix, pas NAPI-RS)**
 > Le risk engine est critique (decide si un trade est execute) : on le veut en Rust pour la surete memoire

@@ -80,6 +80,74 @@ function object(value: unknown): Record<string, unknown> | null {
 
 function finite(value: unknown): number | null { return typeof value === 'number' && Number.isFinite(value) ? value : null; }
 
+/**
+ * PALLAS-M13 — lit l'état durable (format v2 : version + risk + orders +
+ * checksum) pour l'Observatory. Manifeste la correction : l'état transactionnel
+ * devient visible, y compris ses invariants d'intégrité.
+ */
+export interface DurabilityReport {
+  format: 'V2' | 'LEGACY_V1' | 'MISSING' | 'CORRUPT';
+  integrity: 'OK' | 'CORRUPT' | 'N/A';
+  version: number | null;
+  risk: Record<string, unknown> | null;
+  orders: Array<Record<string, unknown>>;
+  orderCount: number;
+  notes: string[];
+}
+
+export function readDurableState(path: string): DurabilityReport {
+  const raw = readObject(path);
+  if (raw === null) {
+    return { format: 'MISSING', integrity: 'N/A', version: null, risk: null, orders: [], orderCount: 0, notes: ['state not found or unreadable'] };
+  }
+  const version = typeof raw['version'] === 'number' ? raw['version'] : null;
+  if (version !== 2) {
+    // v1 (ancien format M12) : contenu = StateOutput brut. Considéré valide
+    // mais à migrer en v2 (le pipeline faill-stop M13 refusera v1 dès la
+    // prochaine écriture de cycle).
+    if (Array.isArray(raw['hist_pnls'])) {
+      return { format: 'LEGACY_V1', integrity: 'N/A', version: null, risk: raw, orders: [], orderCount: 0, notes: ['legacy v1 state detected — migration v2 pending'] };
+    }
+    return { format: 'CORRUPT', integrity: 'CORRUPT', version, risk: null, orders: [], orderCount: 0, notes: ['unrecognized state document (not v2, not legacy v1)'] };
+  }
+  const risk = object(raw['risk']);
+  const orders = Array.isArray(raw['orders']) ? raw['orders'].map(object).filter((o): o is Record<string, unknown> => o !== null) : [];
+  const checksum = typeof raw['checksum'] === 'string' ? raw['checksum'] : null;
+  const computed = checksum !== null
+    ? expectedChecksum(risk, orders, raw['meta']) // meta absent ⇒ undefined (comme @pallas/strategy)
+    : null;
+  const integrityOk = checksum !== null && computed !== null && computed === checksum;
+  const statuses = orders.map((o) => String(o['status'] ?? 'UNKNOWN'));
+  const notes: string[] = [];
+  if (checksum === null) notes.push('missing checksum');
+  else if (!integrityOk) notes.push('checksum mismatch (tampering or partial write)');
+  for (const s of new Set(statuses)) {
+    const count = statuses.filter((v) => v === s).length;
+    if (count > 0) notes.push(`${s.toLowerCase()}: ${count}`);
+  }
+  if (orders.some((o) => o['status'] === 'SUBMITTING' && o['order_id'] == null)) notes.push('reconciliation required (SUBMITTING, no local order id)');
+  if (orders.some((o) => o['status'] === 'AMBIGUOUS')) notes.push('reconciliation required (AMBIGUOUS)');
+  return {
+    format: 'V2',
+    integrity: integrityOk ? 'OK' : 'CORRUPT',
+    version,
+    risk: integrityOk ? risk : null, // un état falsifié ne fait PAS autorité
+    orders,
+    orderCount: orders.length,
+    notes,
+  };
+}
+
+function expectedChecksum(risk: Record<string, unknown> | null, orders: unknown[], meta: unknown): string {
+  // reflète EXACTEMENT `checksumOfState` de @pallas/strategy (version 2) :
+  // canon JSON des champs data (risk + orders + meta), sha256 — indépendant de
+  // `checksum` lui-même. meta: absent ⇒ `meta` vaut `undefined` dans l'objet,
+  // et la canonisation signée encode cette absence en littéral "undefined" —
+  // à reproduire à l'identique, sinon chaque état V2 paraîtrait falsifié.
+  const content = canonicalJson({ version: 2, risk: risk ?? {}, orders, meta });
+  return createHash('sha256').update(content, 'utf8').digest('hex');
+}
+
 async function readMarket(tokenId: string | null, fetcher: typeof fetch, now: Date, staleAfterMs: number): Promise<ObservatorySnapshot['market']> {
   const unknown = { status: 'UNKNOWN' as const, tokenId, question: null, outcome: null, bestBid: null, bestAsk: null, mid: null, spread: null, timestamp: null };
   if (!tokenId) return unknown;
@@ -110,7 +178,8 @@ export function resolveCommit(rootDir: string): string | null {
 export async function buildSnapshot(options: SnapshotOptions): Promise<ObservatorySnapshot> {
   const now = (options.now ?? (() => new Date()))();
   const ledger = readLedger(options.ledgerPath ?? resolve(options.rootDir, '.pallas/ledger.json'));
-  const state = readObject(options.riskStatePath ?? resolve(options.rootDir, '.pallas/risk-state.json'));
+  const durability = readDurableState(options.riskStatePath ?? resolve(options.rootDir, '.pallas/risk-state.json'));
+  const state = durability.risk;
   const loopStatus = readObject(options.loopStatusPath ?? resolve(options.rootDir, '.pallas/observatory-loop.json'));
   const entries = ledger.entries;
   // Un ledger invalide reste inspectable dans ACTIVITY, mais ne devient jamais
@@ -148,7 +217,11 @@ export async function buildSnapshot(options: SnapshotOptions): Promise<Observato
   }
   const warnings: string[] = [];
   if (ledger.status === 'INVALID') warnings.push('LEDGER INVALID');
-  if (!state) warnings.push('RISK STATE UNAVAILABLE');
+  if (durability.format === 'MISSING') warnings.push('RISK STATE UNAVAILABLE');
+  if (durability.format === 'LEGACY_V1') warnings.push('RISK STATE LEGACY V1 (migration v2 pending)');
+  if (durability.integrity === 'CORRUPT') warnings.push('RISK STATE CORRUPT (checksum) — fail-stop, réconciliation requise');
+  if (durability.orders.some((o) => o['status'] === 'SUBMITTING')) warnings.push('RECONCILIATION REQUIRED (SUBMITTING, no order id)');
+  if (durability.orders.some((o) => o['status'] === 'AMBIGUOUS')) warnings.push('RECONCILIATION REQUIRED (AMBIGUOUS order)');
   if (cycleStart < 0) warnings.push('NO CYCLE RECORDED');
   const market = await readMarket(configuredToken, options.fetcher ?? fetch, now, options.staleAfterMs ?? 15_000);
   if (market.status === 'STALE') warnings.push('MARKET DATA STALE');
@@ -163,6 +236,21 @@ export async function buildSnapshot(options: SnapshotOptions): Promise<Observato
     generatedAt: now.toISOString(),
     system: { name: 'PALLAS', version: options.version ?? '0.1.0', commit: options.commit === undefined ? resolveCommit(options.rootDir) : options.commit,
       mode: 'DRY RUN', ledger: ledger.status, ledgerEntries: entries.length, lastEventAt, loop, loopAgeSeconds },
+    durability: {
+      format: durability.format,
+      integrity: durability.integrity,
+      version: durability.version,
+      orders: durability.orders.map((o) => ({
+        correlationId: String(o['correlationId'] ?? ''),
+        status: String(o['status'] ?? 'UNKNOWN'),
+        orderId: typeof o['order_id'] === 'string' ? o['order_id'] : null,
+        outcome: typeof o['outcome'] === 'string' ? o['outcome'] : null,
+        marketId: String(o['market_id'] ?? ''),
+        side: String(o['side'] ?? ''),
+      })),
+      orderCount: durability.orderCount,
+      notes: durability.notes,
+    },
     market: { ...market, question: options.marketQuestion ?? null, outcome: options.marketOutcome ?? null },
     strategy: { name: 'ReferenceStrategy', disclaimer: 'REFERENCE STRATEGY — NON PREDICTIVE',
       signal: signal ? 'BUY' : noSignal ? 'NO SIGNAL' : 'NO SIGNAL YET', threshold: finite(signal?.['threshold']) ?? options.threshold ?? null,

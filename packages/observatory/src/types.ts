@@ -22,6 +22,21 @@ export interface ObservatorySnapshot {
     loop: 'RUNNING' | 'STOPPED' | 'STALE' | 'UNKNOWN';
     loopAgeSeconds: number | null;
   };
+  durability: {
+    format: 'V2' | 'LEGACY_V1' | 'MISSING' | 'CORRUPT';
+    integrity: 'OK' | 'CORRUPT' | 'N/A';
+    version: number | null;
+    orders: Array<{
+      correlationId: string;
+      status: string;
+      orderId: string | null;
+      outcome: string | null;
+      marketId: string;
+      side: string;
+    }>;
+    orderCount: number;
+    notes: string[];
+  };
   market: {
     status: 'OK' | 'UNKNOWN' | 'STALE';
     tokenId: string | null;
