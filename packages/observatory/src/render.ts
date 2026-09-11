@@ -47,7 +47,7 @@ export function renderDashboard(snapshot: ObservatorySnapshot): string {
     <div class="signal-chart"><h3>STRATEGY OBSERVED PRICE · RISK OUTCOME</h3>${renderSignalChart(snapshot.strategy.history)}</div>
   </section>
   <section class="panel risk"><header><h2>RISK</h2>${badge(snapshot.risk.status, snapshot.risk.status === 'ALLOW' ? 'allow' : snapshot.risk.status === 'REJECT' ? 'reject' : 'warning')}</header>
-    <dl><div><dt>REJECTED BY</dt><dd>${esc(snapshot.risk.rejectedBy.join(', ') || 'NONE')}</dd></div><div><dt>SUGGESTED SIZE USD</dt><dd>${value(snapshot.risk.suggestedSizeUsd, 2)}</dd></div><div><dt>CIRCUIT BREAKER</dt><dd>${esc(circuitState(snapshot.risk.circuitBreaker))}</dd></div><div><dt>P&amp;L SAMPLES</dt><dd>${snapshot.risk.pnlSampleSize ?? 'UNKNOWN'}</dd></div></dl>
+    <dl><div><dt>REJECTED BY</dt><dd>${esc(snapshot.risk.rejectedBy.join(', ') || 'NONE')}</dd></div><div><dt>SUGGESTED SIZE USD</dt><dd>${value(snapshot.risk.suggestedSizeUsd, 2)}</dd></div><div><dt>CIRCUIT BREAKER</dt><dd>${esc(circuitState(snapshot.risk.circuitBreaker))}</dd></div><div><dt>P&amp;L SAMPLES</dt><dd>${snapshot.risk.pnlSampleSize ?? 'UNKNOWN'}</dd></div><div><dt>LIVE EXPOSURE USD</dt><dd>${value(snapshot.risk.liveExposureUsd, 2)}</dd></div></dl>
     <table><thead><tr><th>GATE</th><th>ACTION</th><th>REASON</th></tr></thead><tbody>${snapshot.risk.gates.length ? snapshot.risk.gates.map((gate) => `<tr><td>${esc(gate.gate)}</td><td>${badge(gate.action, gate.action === 'Allow' ? 'allow' : 'reject')}</td><td>${esc(gate.reason)}</td></tr>`).join('') : '<tr><td colspan="3">RISK STATE UNAVAILABLE</td></tr>'}</tbody></table>
   </section>
   <section class="panel activity"><header><h2>ACTIVITY</h2><span>${snapshot.activity.length} RECENT</span></header>

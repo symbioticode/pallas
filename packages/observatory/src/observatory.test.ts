@@ -215,4 +215,22 @@ describe('Observatory — état durable v2 (PALLAS-M13)', () => {
     expect(report.killSwitchEngaged).toBe(true);
     expect(report.notes.some((n) => n.includes('kill switch ENGAGED'))).toBe(true);
   });
+
+  it('PALLAS-M15: manifeste l exposition reelle (LIVE EXPOSURE USD) et le rendu', async () => {
+    // L'exposition cumulée des ordres vivants (positions + ordres ouverts) est
+    // la donnée que POSITION_LIMIT compare à la limite de portefeuille (M15).
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-observatory-'));
+    writeFileSync(join(dir, 'ledger.json'), JSON.stringify({ root: 'pallas', entries: [] }));
+    const orders = [
+      { correlationId: '11111111-2222-4333-8444-555555555555', market_id: 'm1', side: 'buy', price: 0.5, quantity: 1, est_value_usd: 250, intent_hash: 'a'.repeat(64), status: 'ACKED', order_id: 'o-1', attempt: 1, created_at: '2026-09-11T00:00:00Z', updated_at: '2026-09-11T00:00:00Z' },
+      { correlationId: '22222222-3333-4444-8555-666666666666', market_id: 'm2', side: 'buy', price: 0.5, quantity: 1, est_value_usd: 150, intent_hash: 'b'.repeat(64), status: 'SUBMITTING', order_id: null, attempt: 1, created_at: '2026-09-11T00:00:00Z', updated_at: '2026-09-11T00:00:00Z' },
+      { correlationId: '33333333-4444-4555-8666-777777777777', market_id: 'm3', side: 'buy', price: 0.5, quantity: 1, est_value_usd: 900, intent_hash: 'c'.repeat(64), status: 'TERMINAL', terminal_reason: 'cancelled', order_id: 'o-3', attempt: 1, created_at: '2026-09-11T00:00:00Z', updated_at: '2026-09-11T00:00:00Z' },
+    ];
+    writeFileSync(join(dir, 'risk.json'), stateV2(NEUTRAL_RISK, orders));
+    const report = readDurableState(join(dir, 'risk.json'));
+    expect(report.liveExposureUsd).toBe(400); // 250 + 150 ; le terminal annulé (900) est exclu
+    const snapshot = await buildSnapshot({ rootDir: dir, ledgerPath: join(dir, 'ledger.json'), riskStatePath: join(dir, 'risk.json'), fetcher: noNetwork, commit: null });
+    expect(snapshot.risk.liveExposureUsd).toBe(400);
+    expect(renderDashboard(snapshot)).toContain('LIVE EXPOSURE USD');
+  });
 });

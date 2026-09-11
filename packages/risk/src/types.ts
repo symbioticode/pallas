@@ -5,10 +5,18 @@
  * PALLAS-M04 : l'exécution n'acceptera plus un cast aveugle — les réponses
  * `invoke()` sont validées à l'exécution par les schémas Zod ci-dessous, qui
  * reflètent LE CONTRAT RÉEL de la CLI (main.rs, serde en snake_case).
+ *
+ * PALLAS-M15 (audit v0.3 F-04 §5, v0.2.1 P0-02/P0-03) : le `TradeRequest` est
+ * une INTENTION sans limites. `bankroll_usd`/`max_order_usd`/`max_drawdown_usd`
+ * ont quitté le payload appelant et vivent dans `RiskConfig` (configuration
+ * opérateur, jamais reconstructible par la stratégie). L'exposition réelle
+ * (positions + ordres ouverts, réconciliation M14) est transportée dans
+ * `StateInput.exposure`.
  */
 
 import { z } from 'zod';
 
+/** Intention uniquement — aucune limite : voir doc-en-tête (PALLAS-M15). */
 export interface TradeRequest {
   market_id: string;
   side: string;
@@ -17,10 +25,33 @@ export interface TradeRequest {
   est_value_usd: number;
   win_probability: number;
   odds: number;
-  bankroll_usd: number;
   confidence: number;
+  /** Âge (ms) de l'orderbook qui construit cette décision — garde stale-price. */
+  market_data_age_ms: number;
+}
+
+/**
+ * Configuration de risque posssédée par l'OPERATEUR. La stratégie n'en
+ * fournit AUCUN champ. Structurément alignée sur `RiskConfig` (pipeline.rs) ;
+ * validée à l'exécution via `RiskConfigSchema` avant injection à la CLI.
+ */
+export interface RiskConfig {
+  bankroll_usd: number;
   max_order_usd: number;
+  max_portfolio_exposure_usd: number;
   max_drawdown_usd: number;
+  max_concentration_usd: number;
+  half_open_probe_size_usd: number;
+  var_min_observations: number;
+  var_startup_envelope_usd: number;
+  max_market_data_age_ms: number;
+}
+
+/** Position ouverte / ordre ouvert — exposition réelle (réconciliation M14). */
+export interface ExposureItem {
+  market_id: string;
+  size_usd: number;
+  event_id?: string | null;
 }
 
 export type GateAction = 'Allow' | 'Reject';
@@ -46,6 +77,8 @@ export interface VaRResult {
   sample_size: number;
   mean_pnl: number;
   std_dev: number;
+  /** PALLAS-M15 (F-08) : ESTIMATED vs INSUFFICIENT_DATA — jamais risque nul silencieux. */
+  status: 'ESTIMATED' | 'INSUFFICIENT_DATA';
 }
 
 export interface StateInput {
@@ -53,6 +86,8 @@ export interface StateInput {
   kill_switch_engaged?: boolean;
   circuit_breaker?: CircuitBreakerState;
   volatility?: VolatilityState;
+  /** Exposition réelle (positions + ordres ouverts) — PALLAS-M15. */
+  exposure?: ExposureItem[];
 }
 
 /** Etat du circuit breaker (snapshot serialize par la CLI Rust). */
@@ -76,6 +111,8 @@ export interface StateOutput {
   kill_switch_engaged: boolean;
   circuit_breaker: CircuitBreakerState;
   volatility: VolatilityState;
+  /** Exposition réelle (positions + ordres ouverts) — PALLAS-M15. */
+  exposure: ExposureItem[];
 }
 
 export interface ValidateResponse {
@@ -126,6 +163,29 @@ export const CircuitBreakerStateSchema: z.ZodType<CircuitBreakerState> = z
   })
   .strict();
 
+export const ExposureItemSchema: z.ZodType<ExposureItem> = z
+  .object({
+    market_id: z.string().min(1),
+    size_usd: z.number().finite().nonnegative(),
+    event_id: z.string().nullish(),
+  })
+  .strict();
+
+/** Configuration de risque OPERATEUR (PALLAS-M15) — validée avant injection CLI. */
+export const RiskConfigSchema: z.ZodType<RiskConfig> = z
+  .object({
+    bankroll_usd: z.number().finite().positive(),
+    max_order_usd: z.number().finite().positive(),
+    max_portfolio_exposure_usd: z.number().finite().positive(),
+    max_drawdown_usd: z.number().finite().positive(),
+    max_concentration_usd: z.number().finite().positive(),
+    half_open_probe_size_usd: z.number().finite().nonnegative(),
+    var_min_observations: z.number().int().nonnegative(),
+    var_startup_envelope_usd: z.number().finite().nonnegative(),
+    max_market_data_age_ms: z.number().finite().nonnegative(),
+  })
+  .strict();
+
 export const VolatilityStateSchema: z.ZodType<VolatilityState> = z
   .object({
     window: z.array(z.number().finite()),
@@ -139,6 +199,7 @@ export const StateOutputSchema: z.ZodType<StateOutput> = z
     kill_switch_engaged: z.boolean(),
     circuit_breaker: CircuitBreakerStateSchema,
     volatility: VolatilityStateSchema,
+    exposure: z.array(ExposureItemSchema),
   })
   .strict();
 
@@ -151,6 +212,7 @@ export const VaRResultSchema: z.ZodType<VaRResult> = z
     sample_size: z.number().nonnegative(),
     mean_pnl: z.number().finite(),
     std_dev: z.number().finite(),
+    status: z.enum(['ESTIMATED', 'INSUFFICIENT_DATA']),
   })
   .strict();
 

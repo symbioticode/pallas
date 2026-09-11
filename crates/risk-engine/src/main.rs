@@ -3,25 +3,34 @@
 //! Contrat : un objet JSON sur stdin, un objet JSON sur stdout.
 //!
 //! ```json
-//! { "command": "validate", "trade": { ... }, "state": { "hist_pnls": [...], "kill_switch_engaged": false, "circuit_breaker": {...}, "volatility": {...} } }
+//! { "command": "validate", "trade": { ...ILLIMITE... }, "config": { ...LIMITES... }, "state": { "hist_pnls": [...], "kill_switch_engaged": false, "circuit_breaker": {...}, "volatility": {...}, "exposure": [...] } }
 //! { "command": "var", "pnls": [...], "confidence": 0.95 }
 //! { "command": "record", "state": { ... }, "pnl": -12.5 }
 //! ```
 //!
 //! Sorties :
 //! - validate -> { "decision": { "allowed": bool, "gates": [...], "rejected_by": [...], "suggested_size_usd": n }, "state": { ... }, "error": null }
-//! - var -> { "var": { "historical_var": n, ... }, "error": null }
+//! - var -> { "var": { "historical_var": n, ..., "status": "ESTIMATED" | "INSUFFICIENT_DATA" }, "error": null }
 //! - record -> { "state": { ... }, "error": null }
 //!
 //! En cas d'erreur d'analyse, { "error": "message" } avec code de sortie non-zero.
 //!
-//! L'etat (circuit breaker, volatilite, kill switch, historiques) est transporte
-//! a CHAQUE appel par l'appelant (processeur TS) et persiste entre deux appels.
+//! PALLAS-M15 : le `trade` est une INTENTION sans limites (deny_unknown_fields
+//! => une ancienne strategie qui enverrait encore bankroll_usd/max_order_usd/
+//! max_drawdown_usd est REFUSEE). Les limites vivent dans `config` (operateur).
+//! `state.exposure` porte l'exposition reelle (positions + ordres ouverts)
+//! fournie par la reconciliation PALLAS-M14. Si `config` est absent, une
+//! configuration conservatrice par defaut s'applique (jamais d'enveloppe
+//! infinie).
+//!
+//! L'etat (circuit breaker, volatilite, kill switch, historiques, exposition)
+//! est transporte a CHAQUE appel par l'appelant (processeur TS) et persiste
+//! entre deux appels.
 
 use std::io::{self, Read, Write};
 
 use risk_engine::circuit_breaker::CircuitBreakerSnapshot;
-use risk_engine::pipeline::{validate_trade, RiskState, TradeRequest};
+use risk_engine::pipeline::{validate_trade, ExposureItem, RiskConfig, RiskState, TradeRequest};
 use risk_engine::var::calculate_at;
 use risk_engine::volatility::VolatilityState;
 
@@ -33,6 +42,8 @@ struct Input {
     command: String,
     #[serde(rename = "trade")]
     trade: Option<TradeRequest>,
+    #[serde(rename = "config")]
+    config: Option<RiskConfig>,
     #[serde(rename = "state")]
     state: Option<StateInput>,
     #[serde(rename = "pnls")]
@@ -54,6 +65,11 @@ struct StateInput {
     circuit_breaker: Option<CircuitBreakerSnapshot>,
     #[serde(rename = "volatility")]
     volatility: Option<VolatilityState>,
+    /// Exposition reelle (positions + ordres ouverts) fournie par l'appelant
+    /// depuis la reconciliation PALLAS-M14. `default` : etat legacy sans
+    /// exposure = portefeuille vide, valide (retrocompatible).
+    #[serde(rename = "exposure", default)]
+    exposure: Vec<ExposureItem>,
 }
 
 /// Etat retransmis en sortie pour que l'appelant le persiste tel quel.
@@ -67,6 +83,8 @@ struct StateOutput {
     circuit_breaker: CircuitBreakerSnapshot,
     #[serde(rename = "volatility")]
     volatility: VolatilityState,
+    #[serde(rename = "exposure")]
+    exposure: Vec<ExposureItem>,
 }
 
 fn build_state(input: StateInput) -> RiskState {
@@ -79,6 +97,7 @@ fn build_state(input: StateInput) -> RiskState {
     if let Some(v) = input.volatility {
         state.volatility.restore(&v);
     }
+    state.exposure = input.exposure;
     state
 }
 
@@ -88,6 +107,7 @@ fn state_output(state: &RiskState) -> StateOutput {
         kill_switch_engaged: state.kill_switch_engaged,
         circuit_breaker: state.circuit_breaker.snapshot(),
         volatility: state.volatility.snapshot(),
+        exposure: state.exposure.clone(),
     }
 }
 
@@ -118,7 +138,10 @@ fn run(input: Input) -> Result<String, String> {
             let trade = input.trade.ok_or("missing 'trade'")?;
             let state_input = input.state.unwrap_or_default();
             let state = build_state(state_input);
-            let decision = validate_trade(&trade, &state);
+            // Absence de config => defaut conservateur documente (jamais une
+            // enveloppe infinie). L'operateur fournit la config de production.
+            let config = input.config.unwrap_or_default();
+            let decision = validate_trade(&trade, &state, &config);
             serde_json::to_string(&DecisionOutput {
                 decision,
                 state: state_output(&state),

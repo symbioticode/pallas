@@ -98,6 +98,8 @@ export interface DurabilityReport {
   /** Ordres en cours de réconciliation (M14). */
   reconcilingOrders: number;
   killSwitchEngaged: boolean | null;
+  /** Exposition US cumulée des ordres vivants (PALLAS-M15). */
+  liveExposureUsd: number | null;
   notes: string[];
 }
 
@@ -106,7 +108,7 @@ const LIVE_STATUSES = new Set(['SUBMITTING', 'SUBMITTED', 'AMBIGUOUS', 'RECONCIL
 export function readDurableState(path: string): DurabilityReport {
   const raw = readObject(path);
   if (raw === null) {
-    return { format: 'MISSING', integrity: 'N/A', version: null, risk: null, orders: [], orderCount: 0, liveOrders: 0, reconcilingOrders: 0, killSwitchEngaged: null, notes: ['state not found or unreadable'] };
+    return { format: 'MISSING', integrity: 'N/A', version: null, risk: null, orders: [], orderCount: 0, liveOrders: 0, reconcilingOrders: 0, killSwitchEngaged: null, liveExposureUsd: null, notes: ['state not found or unreadable'] };
   }
   const version = typeof raw['version'] === 'number' ? raw['version'] : null;
   if (version !== 2) {
@@ -114,9 +116,9 @@ export function readDurableState(path: string): DurabilityReport {
     // mais à migrer en v2 (le pipeline faill-stop M13 refusera v1 dès la
     // prochaine écriture de cycle).
     if (Array.isArray(raw['hist_pnls'])) {
-      return { format: 'LEGACY_V1', integrity: 'N/A', version: null, risk: raw, orders: [], orderCount: 0, liveOrders: 0, reconcilingOrders: 0, killSwitchEngaged: null, notes: ['legacy v1 state detected — migration v2 pending'] };
+      return { format: 'LEGACY_V1', integrity: 'N/A', version: null, risk: raw, orders: [], orderCount: 0, liveOrders: 0, reconcilingOrders: 0, killSwitchEngaged: null, liveExposureUsd: null, notes: ['legacy v1 state detected — migration v2 pending'] };
     }
-    return { format: 'CORRUPT', integrity: 'CORRUPT', version, risk: null, orders: [], orderCount: 0, liveOrders: 0, reconcilingOrders: 0, killSwitchEngaged: null, notes: ['unrecognized state document (not v2, not legacy v1)'] };
+    return { format: 'CORRUPT', integrity: 'CORRUPT', version, risk: null, orders: [], orderCount: 0, liveOrders: 0, reconcilingOrders: 0, killSwitchEngaged: null, liveExposureUsd: null, notes: ['unrecognized state document (not v2, not legacy v1)'] };
   }
   const risk = object(raw['risk']);
   const orders = Array.isArray(raw['orders']) ? raw['orders'].map(object).filter((o): o is Record<string, unknown> => o !== null) : [];
@@ -130,6 +132,10 @@ export function readDurableState(path: string): DurabilityReport {
     const status = String(o['status'] ?? '');
     return LIVE_STATUSES.has(status) || (status === 'ACKED' && o['terminal_reason'] == null);
   }).length;
+  const liveExposureUsd = orders.filter((o) => {
+    const status = String(o['status'] ?? '');
+    return LIVE_STATUSES.has(status) || (status === 'ACKED' && o['terminal_reason'] == null);
+  }).reduce((sum, o) => sum + (finite(o['est_value_usd']) ?? 0), 0);
   const reconcilingOrders = statuses.filter((s) => s === 'RECONCILING').length;
   const killSwitchEngaged = risk?.['kill_switch_engaged'] === true;
   const notes: string[] = [];
@@ -152,6 +158,7 @@ export function readDurableState(path: string): DurabilityReport {
     liveOrders,
     reconcilingOrders,
     killSwitchEngaged,
+    liveExposureUsd,
     notes,
   };
 }
@@ -281,7 +288,7 @@ export async function buildSnapshot(options: SnapshotOptions): Promise<Observato
     risk: { status: allowed === null ? 'UNAVAILABLE' : allowed ? 'ALLOW' : 'REJECT',
       rejectedBy: Array.isArray(decision?.['rejected_by']) ? decision['rejected_by'].map(String) : [], suggestedSizeUsd: finite(decision?.['suggested_size_usd']), gates,
       circuitBreaker: stateAfter?.['circuit_breaker'] ?? null, killSwitchEngaged: typeof stateAfter?.['kill_switch_engaged'] === 'boolean' ? stateAfter['kill_switch_engaged'] : null,
-      pnlSampleSize: histPnls?.length ?? null },
+      pnlSampleSize: histPnls?.length ?? null, liveExposureUsd: durability.liveExposureUsd },
     cycle: { status: cycleStart >= 0 ? 'RECORDED' : 'NONE', execution },
     activity: entries.slice(-50), warnings,
   };

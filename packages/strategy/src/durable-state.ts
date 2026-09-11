@@ -26,7 +26,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { atomicWriteFileSafe, FileLock, type FileLockOptions } from '@pallas/core';
-import { StateOutputSchema, type StateOutput } from '@pallas/risk';
+import { StateOutputSchema, type ExposureItem, type StateOutput } from '@pallas/risk';
 import { z } from 'zod';
 
 /** Version du format d'état (bump = migration explicite). */
@@ -133,6 +133,7 @@ export function freshState(meta?: Record<string, unknown>): DurableStateDoc {
       since_trip: 0,
     },
     volatility: { window: [], baseline: null },
+    exposure: [],
   };
   return {
     version: DURABLE_STATE_VERSION,
@@ -141,6 +142,24 @@ export function freshState(meta?: Record<string, unknown>): DurableStateDoc {
     orders: [],
     ...(meta !== undefined ? { meta } : {}),
   };
+}
+
+/**
+ * Exposition réelle (USD) calculée depuis les ordres du document (PALLAS-M15,
+ * P0-02 / F-04). Un ordre vaut sa valeur déclarée tant qu'il n'est PAS un
+ * terminal annulé/rejeté : positions (TERMINAL-filled) et ordres ouverts
+ * (DECIDED/SUBMITTING/RECONCILING/SUBMITTED/AMBIGUOUS/ACKED) comptent.
+ * Agrégée par marché — l'ordre des lignes est l'ordre d'apparition.
+ */
+export function exposureFromOrders(orders: OrderLifecycle[]): ExposureItem[] {
+  const perMarket = new Map<string, number>();
+  for (const o of orders) {
+    if (o.status === 'TERMINAL' && (o.terminal_reason === 'cancelled' || o.terminal_reason === 'rejected')) {
+      continue;
+    }
+    perMarket.set(o.market_id, (perMarket.get(o.market_id) ?? 0) + o.est_value_usd);
+  }
+  return [...perMarket.entries()].map(([market_id, size_usd]) => ({ market_id, size_usd }));
 }
 
 /** Input de la machine d'états : l'intention (champs déterminants de l'ordre). */

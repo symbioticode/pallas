@@ -15,6 +15,7 @@ import { resolve } from 'node:path';
 
 import type {
   RecordResponse,
+  RiskConfig,
   StateInput,
   StateOutput,
   TradeDecision,
@@ -178,8 +179,15 @@ function runBinary(bin: string, input: string, timeoutMs = 10_000): Promise<stri
 }
 
 /** Valide un trade contre le pipeline de risque complet (fail-closed). */
-export async function validateTrade(trade: TradeRequest, state: StateInput = { hist_pnls: [] }): Promise<TradeDecision> {
-  const res = (await invoke({ command: 'validate', trade, state }, ValidateResponseSchema)) as ValidateResponse;
+export async function validateTrade(
+  trade: TradeRequest,
+  state: StateInput = { hist_pnls: [] },
+  config?: RiskConfig,
+): Promise<TradeDecision> {
+  const res = (await invoke(
+    { command: 'validate', trade, state, ...(config !== undefined ? { config } : {}) },
+    ValidateResponseSchema,
+  )) as ValidateResponse;
   return res.decision;
 }
 
@@ -187,8 +195,12 @@ export async function validateTrade(trade: TradeRequest, state: StateInput = { h
 export async function validateTradeWithState(
   trade: TradeRequest,
   state: StateInput = { hist_pnls: [] },
+  config?: RiskConfig,
 ): Promise<ValidateResponse> {
-  return (await invoke({ command: 'validate', trade, state }, ValidateResponseSchema)) as ValidateResponse;
+  return (await invoke(
+    { command: 'validate', trade, state, ...(config !== undefined ? { config } : {}) },
+    ValidateResponseSchema,
+  )) as ValidateResponse;
 }
 
 /**

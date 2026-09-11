@@ -31,7 +31,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 
 import { sanitizeInput } from '@pallas/core';
-import { validateTradeWithState, type StateInput, type TradeRequest } from '@pallas/risk';
+import { validateTradeWithState, type RiskConfig, type TradeRequest } from '@pallas/risk';
 import {
   AmbiguousOrderError,
   PolymarketClient,
@@ -44,6 +44,7 @@ import { FileLedger } from '@pallas/ledger';
 import { ReferenceStrategy, type ReferenceSignal } from './reference.js';
 import {
   DurableStateStore,
+  exposureFromOrders,
   newLifecycle,
   transitionLifecycle,
   type OrderIntent,
@@ -62,9 +63,12 @@ export interface ReferenceLoopOptions {
   /** Instance de ledger PARTAGÉE avec l'appelant : une seule écriture du fichier. */
   ledger: FileLedger;
   statePath: string;
-  bankrollUsd: number;
-  maxOrderUsd: number;
-  maxDrawdownUsd: number;
+  /**
+   * Configuration de risque OPERATEUR (PALLAS-M15). La stratégie n'en fournit
+   * AUCUN champ : `bankroll_usd`/`max_order_usd`/`max_drawdown_usd` ont quitté
+   * l'appelant et ne peuvent plus être reconstruits par le trade.
+   */
+  riskConfig: RiskConfig;
   /**
    * Signataire "de forme" pour le payload signé dry-run (éphémère si omis).
    * Sa clé publique = l'adresse "maker". Si fournie, l'orchestrateur peut
@@ -100,11 +104,13 @@ export class CrashSimulationError extends Error {
   }
 }
 
-/** Construit le TradeRequest à partir du signal — valeurs neutres NON-prédictives. */
-export function buildReferenceTradeRequest(
-  signal: ReferenceSignal,
-  opts: Pick<ReferenceLoopOptions, 'bankrollUsd' | 'maxOrderUsd' | 'maxDrawdownUsd'>,
-): TradeRequest {
+/**
+ * Construit le TradeRequest à partir du signal — INTENTION pure, sans AUCUNE
+ * limite (PALLAS-M15) : bankroll_usd/max_order_usd/max_drawdown_usd ne vivent
+ * que dans RiskConfig (opérateur). `marketDataAgeMs` est l'âge de l'orderbook
+ * au moment de la décision (garde stale-price).
+ */
+export function buildReferenceTradeRequest(signal: ReferenceSignal, marketDataAgeMs: number): TradeRequest {
   const estValue = Math.round(signal.price * signal.size * 100) / 100;
   const marketImpliedP = clamp01(signal.price);
   return {
@@ -116,9 +122,7 @@ export function buildReferenceTradeRequest(
     win_probability: marketImpliedP,
     odds: 2.0,
     confidence: 0.5,
-    bankroll_usd: opts.bankrollUsd,
-    max_order_usd: opts.maxOrderUsd,
-    max_drawdown_usd: opts.maxDrawdownUsd,
+    market_data_age_ms: marketDataAgeMs,
   };
 }
 
@@ -173,7 +177,7 @@ export async function runReferenceCycle(
     return { cycle, signal, allowed: false, rejected_by: [], execution: 'not_attempted', ledgerRecords: ledger.length };
   }
 
-  const trade = buildReferenceTradeRequest(signal, opts);
+  const trade = buildReferenceTradeRequest(signal, indicatorMs);
   const store = new DurableStateStore(opts.statePath);
 
   // --- étape 2.5 (PALLAS-M14) : réconciliation du scope AVANT la décision ---
@@ -212,9 +216,15 @@ export async function runReferenceCycle(
   // --- étape 3 : risk engine + écriture DURABLE de la décision (DECIDED) ---
   // Lecture + validation + persist DECIDED sous UN SEUL verrou : personne ne
   // peut écrire entre notre lecture d'état et l'enregistrement de la décision.
+  // PALLAS-M15 : l'âge des données est mesuré AU moment de la décision (il
+  // englobe fetch+signal+réconciliation), et l'exposition réelle est calculée
+  // depuis les ordres vivants (positions + ordres ouverts) du document.
   const riskStart = Date.now();
+  const dataAgeMs = Date.now() - indicatorStart;
+  trade.market_data_age_ms = dataAgeMs;
   const outcome = await store.withLock(async (doc) => {
-    const { decision, state } = await validateTradeWithState(trade, doc.risk);
+    const stateInput = { ...doc.risk, exposure: exposureFromOrders(doc.orders) };
+    const { decision, state } = await validateTradeWithState(trade, stateInput, opts.riskConfig);
     if (!decision.allowed) {
       return { decision, state, lifecycle: null as Awaited<ReturnType<typeof newLifecycle>> | null };
     }
@@ -469,9 +479,20 @@ async function main(): Promise<void> {
   const cycles = Math.max(1, Number(process.env.PALLAS_REF_CYCLES ?? '3') || 3);
   const threshold = Number(process.env.PALLAS_REF_THRESHOLD ?? '0.6');
   const size = Number(process.env.PALLAS_REF_SIZE ?? '1');
+  // PALLAS-M15 : la configuration de risque est OPERATEUR, jamais portée par un
+  // trade. Valeurs par défaut conservatrices, surchargables par variables.
   const bankroll = Number(process.env.PALLAS_REF_BANKROLL_USD ?? '1000');
-  const maxOrder = Number(process.env.PALLAS_REF_MAX_ORDER_USD ?? '25');
-  const maxDrawdown = Number(process.env.PALLAS_REF_MAX_DRAWDOWN_USD ?? String(Math.round(bankroll * 0.3)));
+  const riskConfig: RiskConfig = {
+    bankroll_usd: bankroll,
+    max_order_usd: Number(process.env.PALLAS_REF_MAX_ORDER_USD ?? '25'),
+    max_portfolio_exposure_usd: Number(process.env.PALLAS_REF_PORTFOLIO_EXPOSURE_USD ?? String(bankroll)),
+    max_drawdown_usd: Number(process.env.PALLAS_REF_MAX_DRAWDOWN_USD ?? String(Math.round(bankroll * 0.3))),
+    max_concentration_usd: Number(process.env.PALLAS_REF_CONCENTRATION_USD ?? String(bankroll)),
+    half_open_probe_size_usd: Number(process.env.PALLAS_REF_HALF_OPEN_PROBE_USD ?? '50'),
+    var_min_observations: Number(process.env.PALLAS_REF_VAR_MIN_OBSERVATIONS ?? '20'),
+    var_startup_envelope_usd: Number(process.env.PALLAS_REF_VAR_ENVELOPE_USD ?? String(Math.round(bankroll * 0.1))),
+    max_market_data_age_ms: Number(process.env.PALLAS_REF_MAX_DATA_AGE_MS ?? '600000'),
+  };
   const pkHex = process.env.PALLAS_REF_PK ?? '';
 
   const externalText = process.env.PALLAS_REF_EXTERNAL_TEXT ?? null;
@@ -522,9 +543,7 @@ async function main(): Promise<void> {
       token_ids: tokenIds,
       threshold,
       size,
-      bankroll_usd: bankroll,
-      max_order_usd: maxOrder,
-      max_drawdown_usd: maxDrawdown,
+      riskConfig,
       signer: signer ? signer.address : 'ephemeral(forme)',
     }),
   );
@@ -536,9 +555,7 @@ async function main(): Promise<void> {
       strategy,
       ledger,
       statePath,
-      bankrollUsd: bankroll,
-      maxOrderUsd: maxOrder,
-      maxDrawdownUsd: maxDrawdown,
+      riskConfig,
       signer,
       externalText,
     });

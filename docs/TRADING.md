@@ -1,9 +1,10 @@
 # Trading — Pallas — comportement attendu
 
-**Date :** 11 septembre 2026 — état aligné sur le code réel (PALLAS-M01..M14).
+**Date :** 11 septembre 2026 — état aligné sur le code réel (PALLAS-M01..M15).
 Sujet en lien : `packages/execution/src/polymarketClient.ts`, missions `PALLAS-M04`
 (validation runtime + retry + idempotence), `PALLAS-M08` (wire et scope signature),
-`PALLAS-M13` (transaction durable), `PALLAS-M14` (réconciliation des ordres).
+`PALLAS-M13` (transaction durable), `PALLAS-M14` (réconciliation des ordres),
+`PALLAS-M15` (risque de portefeuille — limites opérateur, exposition réelle).
 
 ## Scope MVP
 
@@ -67,6 +68,33 @@ DECIDED→SUBMITTING→AMBIGUOUS/ACKED→TERMINAL) et le module `reconciliation.
 no-op. Les erreurs transitoires (réseau, timeout, 5xx) sont donc retentées ; les erreurs
 4xx (404…) sont définitives et remontées telles quelles.
 
+## Risque de portefeuille (PALLAS-M15 — limites opérateur + exposition réelle)
+
+Le risk engine est maintenant un véritable gestionnaire de risque de portefeuille :
+
+- **Limites hors stratégie (`RiskConfig`).** `bankroll_usd`, `max_order_usd`,
+  `max_portfolio_exposure_usd`, `max_drawdown_usd`, `max_concentration_usd`,
+  `half_open_probe_size_usd`, `var_min_observations`, `var_startup_envelope_usd` et
+  `max_market_data_age_ms` vivent dans `RiskConfig` (opérateur, chargée via variables
+  d'environnement ou configuration). Le `TradeRequest` ne contient plus AUCUNE limite —
+  il est une pure intention. En cas d'envoi malveillant de champs limites par l'appelant,
+  `#[serde(deny_unknown_fields)]` (Rust) rejette l'entrée dès la désérialisation.
+- **Exposition réelle cumulée.** L'état du risk engine transporte `exposure` (positions +
+  ordres ouverts calculés par le cycle depuis `doc.orders`, réconciliation M14). La porte
+  `POSITION_LIMIT` compare le total **après exécution** (cumul existant + nouvel ordre) à la
+  limite, pas seulement la valeur de l'ordre isolé.
+- **Concentration par marché.** Une seconde borne `CONCENTRATION_LIMIT` limite l'exposition
+  cumulée sur un même `market_id`.
+- **Circuit breaker `HalfOpen`.** Trois cas sont distingués : `Closed` (normal), `HalfOpen`
+  (autorise uniquement une sonde de taille limitée par
+  `half_open_probe_size_usd`), `Open` (rejet total). `HalfOpen` ne traite plus les trades
+  comme normaux.
+- **`VaR/CVaR` — `ESTIMATED` vs `INSUFFICIENT_DATA`.** Moins de `var_min_observations`
+  observations → statut `INSUFFICIENT_DATA`, politique d'enveloppe de démarrage (jamais
+  « risque nul » silencieux).
+- **Garde de fraîcheur (`market_data_age_ms`).** Un ordre dont la donnée de marché a plus
+  de `max_market_data_age_ms` ms est rejeté `MARKET_DATA_FRESHNESS`.
+
 ## Scope signature et wire V2 (PALLAS-M08, 2026-09-10)
 
 - **Wire V2 conforme aux clients officiels** (`clob-client-v2`, `py-clob-client-v2`,
@@ -96,4 +124,7 @@ no-op. Les erreurs transitoires (réseau, timeout, 5xx) sont donc retentées ; l
 - Protections et réserves sécurité : `docs/SECURITY.md`.
 - Détail de la réconciliation : `packages/strategy/src/reconciliation.ts` + journal
   `docs/mission/mission-PALLAS-M14-journal.md`.
+- Détail du risk engine (portefeuille, gates) : `crates/risk-engine/src/pipeline.rs` +
+  `packages/risk/src/types.ts` + `packages/strategy/src/reconciliation.ts` +
+  journal `docs/mission/mission-PALLAS-M15-journal.md`.
 - État du plan et missions : `PLAN.md` + `docs/mission/`.

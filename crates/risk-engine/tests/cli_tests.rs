@@ -5,6 +5,7 @@ use std::process::{Command, Stdio};
 
 use risk_engine::kelly::kelly_fraction;
 use risk_engine::pipeline::validate_trade;
+use risk_engine::pipeline::RiskConfig;
 use risk_engine::pipeline::RiskState;
 use risk_engine::pipeline::TradeRequest;
 use risk_engine::var::var_historical;
@@ -45,10 +46,8 @@ fn valid_trade_json() -> serde_json::Value {
         "est_value_usd": 6.0, // coherent : price * quantity = 6 (M09)
         "win_probability": 0.7,
         "odds": 0.7,
-        "bankroll_usd": 10_000.0,
         "confidence": 0.8,
-        "max_order_usd": 1_000.0,
-        "max_drawdown_usd": 5_000.0,
+        "market_data_age_ms": 0.0, // donnees fraiches (PALLAS-M15)
     })
 }
 
@@ -87,10 +86,8 @@ fn cli_validate_returns_decision() {
         est_value_usd: 6.0, // coherent : price * quantity = 6 (M09)
         win_probability: 0.7,
         odds: 0.7,
-        bankroll_usd: 10_000.0,
         confidence: 0.8,
-        max_order_usd: 1_000.0,
-        max_drawdown_usd: 5_000.0,
+        market_data_age_ms: 0.0,
     };
     let input = serde_json::json!({
         "command": "validate",
@@ -142,9 +139,7 @@ fn var_historical_bounded() {
 
 #[test]
 fn full_pipeline_integrates() {
-    // Cree un etat "frais" mais avec un circuit breaker declenche.
     let mut state = RiskState::new();
-    // Simule des pertes pour le rendre plus strict (optionnel ici).
     let _ = &mut state;
     let req = TradeRequest {
         market_id: "x".to_string(),
@@ -154,13 +149,96 @@ fn full_pipeline_integrates() {
         est_value_usd: 2.0, // coherent : 0.4 * 5 = 2 (avant M09 : 100.0, incoherent)
         win_probability: 0.6,
         odds: 1.5,
-        bankroll_usd: 20_000.0,
         confidence: 0.9,
-        max_order_usd: 500.0,
-        max_drawdown_usd: 8_000.0,
+        market_data_age_ms: 0.0,
     };
-    let d = validate_trade(&req, &state);
-    assert!(d.allowed);
+    // PALLAS-M15 : les limites viennent de la CONFIGURATION, plus du trade.
+    let config = RiskConfig {
+        bankroll_usd: 20_000.0,
+        max_order_usd: 500.0,
+        max_portfolio_exposure_usd: 500.0,
+        max_drawdown_usd: 8_000.0,
+        max_concentration_usd: 500.0,
+        ..Default::default()
+    };
+    let d = validate_trade(&req, &state, &config);
+    assert!(d.allowed, "rejected_by={:?}", d.rejected_by);
+}
+
+// --- PALLAS-M15 : frontiere d'intention — limite mais POINTE sur le contrat ---
+
+#[test]
+fn cli_rejects_legacy_limit_fields_in_trade() {
+    // Une strategie qui enverrait encore bankroll_usd/max_order_usd/
+    // max_drawdown_usd est REFUSEE a la deserialisation (deny_unknown_fields) :
+    // la frontiere est explicite, jamais un silence dangereux. Fail-closed.
+    let input = serde_json::json!({
+        "command": "validate",
+        "trade": {
+            "market_id": "m1",
+            "side": "buy",
+            "price": 0.6,
+            "quantity": 10.0,
+            "est_value_usd": 6.0,
+            "win_probability": 0.7,
+            "odds": 0.7,
+            "confidence": 0.8,
+            "market_data_age_ms": 0.0,
+            "bankroll_usd": 1_000_000.0, // tenter d'elargir l'enveloppe
+        },
+        "state": { "hist_pnls": [] }
+    });
+    let mut child = spawn_cli()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn cli");
+    child.stdin.take().unwrap().write_all(input.to_string().as_bytes()).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(!output.status.success(), "champ limite legacy doit etre refuse");
+    let err = String::from_utf8_lossy(&output.stderr);
+    assert!(err.contains("unknown field"), "stderr: {err}");
+}
+
+#[test]
+fn cli_config_owns_limits() {
+    // Le MEME trade valide est refusé ou accepté selon la CONFIG, pas selon le payload.
+    let tight = serde_json::json!({
+        "command": "validate",
+        "trade": valid_trade_json(),
+        "config": { "bankroll_usd": 10_000.0, "max_order_usd": 1.0, "max_portfolio_exposure_usd": 1.0, "max_drawdown_usd": 5000.0, "max_concentration_usd": 1.0, "half_open_probe_size_usd": 0.5, "var_min_observations": 2, "var_startup_envelope_usd": 1.0, "max_market_data_age_ms": 600000.0 },
+        "state": { "hist_pnls": [1.0, -1.0] }
+    });
+    let out_tight = run_cli(&tight.to_string());
+    assert_eq!(out_tight["decision"]["allowed"], false);
+    let rejected = out_tight["decision"]["rejected_by"].as_array().unwrap();
+    assert!(rejected.iter().any(|g| g == "POSITION_LIMIT"));
+
+    let loose = serde_json::json!({
+        "command": "validate",
+        "trade": valid_trade_json(),
+        "config": { "bankroll_usd": 10_000.0, "max_order_usd": 1_000.0, "max_portfolio_exposure_usd": 1_000.0, "max_drawdown_usd": 5000.0, "max_concentration_usd": 1_000.0, "half_open_probe_size_usd": 50.0, "var_min_observations": 2, "var_startup_envelope_usd": 1_000.0, "max_market_data_age_ms": 600000.0 },
+        "state": { "hist_pnls": [1.0, -1.0] }
+    });
+    let out_loose = run_cli(&loose.to_string());
+    assert_eq!(out_loose["decision"]["allowed"], true);
+}
+
+#[test]
+fn cli_exposure_is_transported_and_limits_cumulative() {
+    // L'exposition reelle (reconciliation PALLAS-M14) est transportee dans
+    // l'etat et borne les ordres suivants (P0-02 / F-04).
+    let input = serde_json::json!({
+        "command": "validate",
+        "trade": valid_trade_json(),
+        "config": { "bankroll_usd": 10_000.0, "max_order_usd": 1_000.0, "max_portfolio_exposure_usd": 10.0, "max_drawdown_usd": 5000.0, "max_concentration_usd": 1_000.0, "half_open_probe_size_usd": 50.0, "var_min_observations": 2, "var_startup_envelope_usd": 1_000.0, "max_market_data_age_ms": 600000.0 },
+        "state": { "hist_pnls": [1.0, -1.0], "exposure": [ { "market_id": "m1", "size_usd": 8.0 } ] }
+    });
+    let out = run_cli(&input.to_string());
+    assert_eq!(out["decision"]["allowed"], false, "8 + 6 = 14 > 10");
+    let rejected = out["decision"]["rejected_by"].as_array().unwrap();
+    assert!(rejected.iter().any(|g| g == "POSITION_LIMIT"));
 }
 
 // --- M01 : etat persistant transporte entre appels CLI ---
@@ -244,10 +322,8 @@ fn cli_audit_2026_09_09_rejects_invalid_trade() {
             "est_value_usd": -100.0,
             "win_probability": 2.0,
             "odds": 0.7,
-            "bankroll_usd": 10_000.0,
             "confidence": 0.8,
-            "max_order_usd": 1_000.0,
-            "max_drawdown_usd": 5_000.0,
+            "market_data_age_ms": 0.0,
         },
         "state": { "hist_pnls": [] }
     });

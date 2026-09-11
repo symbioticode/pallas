@@ -77,6 +77,8 @@ export interface ObservatorySnapshot {
     circuitBreaker: unknown | null;
     killSwitchEngaged: boolean | null;
     pnlSampleSize: number | null;
+    /** Exposition US (positions + ordres ouverts) manifestée par M15. */
+    liveExposureUsd: number | null;
   };
   cycle: { status: 'RECORDED' | 'NONE'; execution: string | null };
   activity: ObservatoryRecord[];

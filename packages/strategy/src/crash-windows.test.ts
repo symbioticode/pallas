@@ -41,13 +41,26 @@ function fakeRiskBinary(stdout: string): string {
 const VALID_STATE_JSON =
   '{"hist_pnls":[1,-1],"kill_switch_engaged":false,' +
   '"circuit_breaker":{"state":"Closed","consecutive_losses":0,"cumulative_pnl":0,"peak_pnl":0,"since_trip":0},' +
-  '"volatility":{"window":[],"baseline":null}}';
+  '"volatility":{"window":[],"baseline":null},"exposure":[]}';
 
 const DECISION_ALLOW =
   `{"decision":{"allowed":true,"gates":[{"gate":"INPUT_VALIDATION","action":"Allow","reason":"ok"}],` +
   `"rejected_by":[],"suggested_size_usd":25},"state":${VALID_STATE_JSON}}`;
 
 const TOKEN = '1234567890123456789012345678901234567890123456789012345678901234';
+
+/** Configuration de risque de test (opérateur) — jamais portée par un trade. */
+const TEST_RISK_CONFIG = {
+  bankroll_usd: 1000,
+  max_order_usd: 25,
+  max_portfolio_exposure_usd: 1000,
+  max_drawdown_usd: 300,
+  max_concentration_usd: 1000,
+  half_open_probe_size_usd: 5,
+  var_min_observations: 2,
+  var_startup_envelope_usd: 100,
+  max_market_data_age_ms: 600000,
+};
 
 /** Client dry-run STRICT : placeOrder bloque avant le réseau (état réel de prod). */
 function fakeClients(): { dry: PolymarketClient } {
@@ -79,9 +92,7 @@ function setup() {
     strategy: new ReferenceStrategy({ tokenIds: [TOKEN], buyThreshold: 0.6, size: 1 }),
     ledger: env.ledger,
     statePath: env.statePath,
-    bankrollUsd: 1000,
-    maxOrderUsd: 25,
-    maxDrawdownUsd: 300,
+    riskConfig: TEST_RISK_CONFIG,
     ...over,
   });
   return { ...env, base };

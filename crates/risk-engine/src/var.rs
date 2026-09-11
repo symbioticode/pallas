@@ -6,6 +6,18 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Etat de confiance d'un calcul VaR/CVaR (PALLAS-M15, F-08). La distinction
+/// est CATEGORIQUE : "risque mesure a 0" et "pas assez de donnees pour mesurer"
+/// ne sont jamais confondus. Un historique vide ou a observation unique est
+/// `INSUFFICIENT_DATA` — le pipeline applique alors une politique explicite
+/// (enveloppe de demarrage) au lieu d'un passage silencieux a risque nul.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum VarStatus {
+    Estimated,
+    InsufficientData,
+}
+
 /// Invariant global : les valeurs de risque ne sont jamais negatives.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VaRResult {
@@ -16,6 +28,10 @@ pub struct VaRResult {
     pub sample_size: usize,
     pub mean_pnl: f64,
     pub std_dev: f64,
+    /// `ESTIMATED` si l'echantillon permet un calcul (>= 2 obs), sinon
+    /// `INSUFFICIENT_DATA`. Le pipeline compare aussi `sample_size` au seuil
+    /// operateur `var_min_observations`.
+    pub status: VarStatus,
 }
 
 /// VaR historique sur un tableau [P&L] donne, au niveau de confiance donne.
@@ -130,6 +146,7 @@ pub fn calculate_at(pnls: &[f64], confidence: f64) -> VaRResult {
             sample_size: pnls.len(),
             mean_pnl: if pnls.len() == 1 { pnls[0] } else { 0.0 },
             std_dev: 0.0,
+            status: VarStatus::InsufficientData,
         };
     }
     let mean = pnls.iter().sum::<f64>() / pnls.len() as f64;
@@ -149,6 +166,7 @@ pub fn calculate_at(pnls: &[f64], confidence: f64) -> VaRResult {
         sample_size: pnls.len(),
         mean_pnl: (mean * 100.0).round() / 100.0,
         std_dev: (std_dev * 100.0).round() / 100.0,
+        status: VarStatus::Estimated,
     }
 }
 
@@ -195,12 +213,23 @@ mod tests {
         assert_eq!(r.historical_var, 0.0);
         assert_eq!(r.cvar, 0.0);
         assert_eq!(r.sample_size, 0);
+        // PALLAS-M15 : zero observation = INSUFFICIENT_DATA explicite, jamais
+        // un risque mesure a zero.
+        assert_eq!(r.status, VarStatus::InsufficientData);
     }
 
     #[test]
     fn var_single_observation_zero() {
         let r = calculate_at(&[-100.0], 0.95);
         assert_eq!(r.historical_var, 0.0);
+        assert_eq!(r.status, VarStatus::InsufficientData);
+    }
+
+    #[test]
+    fn estimated_status_on_sufficient_history() {
+        let r = calculate_at(&[1.0, -1.0, 2.0], 0.95);
+        assert_eq!(r.status, VarStatus::Estimated);
+        assert_eq!(r.sample_size, 3);
     }
 
     #[test]

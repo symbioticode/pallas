@@ -35,6 +35,7 @@
 > | `PALLAS-M12` | Stratégie de référence : intégration bout-en-bout dry-run (ledger chaîné, orchestrateur, reads réels) | ✅ clôturée 2026-09-10 |
 > | `PALLAS-M13` | Transaction durable décision→ordre→ack : persistance atomique (atomicfs+lock+fsync), fail-stop, machine d'états, correlationId, 4 crash-windows, concurrence, Observatory v2 | ✅ clôturée 2026-09-11 |
 > | `PALLAS-M14` | Réconciliation des ordres : getOpenOrders/getOrder, gate de scope (RECONCILING), cancel-all sur kill switch, défense en profondeur au point d'émission | ✅ clôturée 2026-09-11 |
+> | `PALLAS-M15` | Risque de portefeuille : exposition réelle cumulée + concentration par marché (F-04), limites hors stratégie (P0-03), circuit breaker HalfOpen restrictif (P0-02), VaR/CVaR INSUFFICIENT_DATA (F-08), garde stale-price | ✅ clôturée 2026-09-11 |
 
 > **Decision technique clé (Rust via Nix, pas NAPI-RS)**
 > Le risk engine est critique (decide si un trade est execute) : on le veut en Rust pour la surete memoire
