@@ -30,7 +30,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 
-import { sanitizeInput } from '@pallas/core';
+import { sanitizeInput, emitAnomaly } from '@pallas/core';
 import { validateTradeWithState, type RiskConfig, type TradeRequest } from '@pallas/risk';
 import {
   AmbiguousOrderError,
@@ -244,6 +244,12 @@ export async function runReferenceCycle(
       reconcileSummary = { results: scope.results.length, clear: scope.clear, skipped: false };
     } catch (err) {
       reconcileSummary = { ...reconcileSummary, skipped: false, clear: false };
+      // PALLAS-M20 : une réconciliation qui échoue est une anomalie opérationnelle
+      // à alerter (stock AMBIGUOUS non réglé → scope bloqué). Dédupliqué en mémoire.
+      emitAnomaly('RECONCILE_FAILED', 'reconcile scope failed', {
+        market_id: trade.market_id,
+        error: err instanceof Error ? err.message.slice(0, 300) : String(err),
+      });
       await ledger.append({
         event: 'reconcile_scope_error',
         timestamp: new Date().toISOString(),
@@ -478,6 +484,13 @@ async function attemptPlaceOrder(
     if (err instanceof AmbiguousOrderError) {
       // Réseau contacté, résultat inconnu : état AMBIGUOUS, réconciliation
       // requise (M14) avant toute nouvelle émission sur ce scope.
+      // PALLAS-M20 : ordre ambigu = anomalie à alerter immédiatement — la simple
+      // ligne de ledger est noyée, l'alerte est observable (JSONL CRITICAL + webhook).
+      emitAnomaly('AMBIGUOUS_ORDER', 'order result unknown after network contact', {
+        correlation_id: lifecycle.correlationId,
+        market_id: signal.tokenId,
+        attempt: lifecycle.attempt,
+      });
       await store.withLock((doc) => {
         doc.orders = doc.orders.map((o) =>
           o.correlationId === lifecycle.correlationId
@@ -504,6 +517,11 @@ async function attemptPlaceOrder(
               });
             }
           } catch (reconcileErr) {
+            // PALLAS-M20 : réconciliation d'un ordre ambigu échouée — anomalie.
+            emitAnomaly('RECONCILE_FAILED', 'reconcile after ambiguity failed', {
+              correlation_id: lifecycle.correlationId,
+              error: reconcileErr instanceof Error ? reconcileErr.message.slice(0, 300) : String(reconcileErr),
+            });
             await ledger.append({
               event: 'reconcile_after_ambiguity_error',
               timestamp: new Date().toISOString(),
@@ -591,8 +609,29 @@ async function main(): Promise<void> {
 
   const client = new PolymarketClient();
   const strategy = new ReferenceStrategy({ tokenIds, buyThreshold: threshold, size });
-  const ledger = FileLedger.load(ledgerPath, { publicKeyPem: ledgerPublicKey });
-  const store = new DurableStateStore(statePath);
+  // PALLAS-M20 : un ledger corrompu (rupture/truncation/sig invalide) est un
+  // incident — alerte CRITICAL AVANT le fail-stop du chargement.
+  let ledger: FileLedger;
+  try {
+    ledger = FileLedger.load(ledgerPath, { publicKeyPem: ledgerPublicKey });
+  } catch (err) {
+    emitAnomaly('LEDGER_CORRUPT', 'ledger load fail-stop triggered', {
+      path: ledgerPath,
+      error: err instanceof Error ? err.message.slice(0, 300) : String(err),
+    });
+    throw err;
+  }
+  // PALLAS-M20 : état durable corrompu/cassé (checksum) au démarrage = incident.
+  let store: DurableStateStore;
+  try {
+    store = new DurableStateStore(statePath);
+  } catch (err) {
+    emitAnomaly('STATE_CORRUPT', 'durable state load fail-stop triggered', {
+      path: statePath,
+      error: err instanceof Error ? err.message.slice(0, 300) : String(err),
+    });
+    throw err;
+  }
   const signer =
     pkHex.length > 0
       ? {
@@ -608,6 +647,11 @@ async function main(): Promise<void> {
   const killStart = Date.now();
   try {
     const record = await enforceKillSwitch(store, client);
+    // PALLAS-M20 : kill switch ENGAGÉ = alerte immédiate, pas seulement un
+    // warning du dashboard (le cancel-all a été déclenché ou est bloqué).
+    if (record.engaged === true) {
+      emitAnomaly('KILL_SWITCH', 'global kill switch ENGAGED', { state: 'engaged', cancel_all: record.cancelAll });
+    }
     await ledger.append({
       event: 'kill_switch_sync',
       timestamp: new Date().toISOString(),

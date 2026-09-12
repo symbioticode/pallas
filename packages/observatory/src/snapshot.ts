@@ -22,6 +22,8 @@ export interface SnapshotOptions {
   marketOutcome?: string;
   demoOverride?: boolean;
   loopStatusPath?: string;
+  /** Chemin du fichier JSONL d'alertes (`.pallas/alerts.jsonl`) — lu en lecture seule. */
+  alertPath?: string;
 }
 
 function canonicalJson(value: unknown): string {
@@ -229,6 +231,32 @@ export function resolveCommit(rootDir: string): string | null {
   try { return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: rootDir, encoding: 'utf8', timeout: 1_000 }).trim() || null; } catch { return null; }
 }
 
+/**
+ * PALLAS-M20 — lit les dernières alertes CRITICAL émises par @pallas/core
+ * (JSONL `.pallas/alerts.jsonl`). Lecture seule du fichier partagé, jamais
+ * de POST ni d'écriture depuis l'observatory (frontière READ-ONLY).
+ */
+export function readAlerts(path: string, limit = 20): ObservatorySnapshot['alerts'] {
+  let content: string;
+  try { content = readFileSync(path, 'utf8'); } catch { return []; }
+  const last: ObservatorySnapshot['alerts'] = [];
+  for (const line of content.split('\n').reverse()) {
+    if (line.trim().length === 0) continue;
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      if (typeof parsed['ts'] !== 'string' || typeof parsed['event'] !== 'string' || typeof parsed['subject'] !== 'string') continue;
+      last.push({
+        ts: parsed['ts'],
+        anomaly: typeof parsed['anomaly'] === 'string' ? parsed['anomaly'] : '',
+        event: parsed['event'],
+        subject: parsed['subject'],
+      });
+      if (last.length >= limit) break;
+    } catch { /* ligne malformée d'un autre processus : ignorer, ne pas casser le snapshot */ }
+  }
+  return last;
+}
+
 export async function buildSnapshot(options: SnapshotOptions): Promise<ObservatorySnapshot> {
   const now = (options.now ?? (() => new Date()))();
   const ledger = readLedger(options.ledgerPath ?? resolve(options.rootDir, '.pallas/ledger.json'));
@@ -322,6 +350,7 @@ export async function buildSnapshot(options: SnapshotOptions): Promise<Observato
       pnlSampleSize: histPnls?.length ?? null, liveExposureUsd: durability.liveExposureUsd },
     cycle: { status: cycleStart >= 0 ? 'RECORDED' : 'NONE', execution },
     activity: entries.slice(-50), warnings,
+    alerts: readAlerts(options.alertPath ?? resolve(options.rootDir, '.pallas/alerts.jsonl')),
   };
   return redactSecrets(snapshot) as ObservatorySnapshot;
 }

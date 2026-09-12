@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderDashboard } from './render.js';
-import { buildSnapshot, readDurableState, redactSecrets } from './snapshot.js';
+import { buildSnapshot, readAlerts, readDurableState, redactSecrets } from './snapshot.js';
 import { createReadOnlyRouter } from './server.js';
 
 function canonical(value: unknown): string {
@@ -49,10 +49,11 @@ describe('Observatory read-only boundary', () => {
     expect(response.headers?.Allow).toBe('GET');
   });
 
-  it('has exactly two GET surfaces and no mutation route', async () => {
+  it('has exactly three GET surfaces and no mutation route', async () => {
     const route = createReadOnlyRouter({ rootDir: '/nonexistent', fetcher: noNetwork, commit: null });
     expect((await route('GET', '/')).status).toBe(200);
     expect((await route('GET', '/api/snapshot')).status).toBe(200);
+    expect((await route('GET', '/api/status')).status).toBe(200);
     expect((await route('GET', '/orders')).status).toBe(404);
   });
 
@@ -264,5 +265,94 @@ describe('Observatory — état durable v2 (PALLAS-M13)', () => {
     const snapshot = await buildSnapshot({ rootDir: dir, ledgerPath: join(dir, 'ledger.json'), riskStatePath: join(dir, 'risk.json'), fetcher: noNetwork, commit: null });
     expect(snapshot.risk.liveExposureUsd).toBe(400);
     expect(renderDashboard(snapshot)).toContain('LIVE EXPOSURE USD');
+  });
+});
+
+describe('Observatory — alertes PALLAS-M20 (JSONL + /api/status)', () => {
+  function alertLine(anomaly: string, subject: string, ts: string): string {
+    return JSON.stringify({
+      ts, level: 'CRITICAL', anomaly,
+      event: `ANOMALY.${anomaly}`, subject,
+      context: { correlation_id: '11111111-2222-4333-8444-555555555555' },
+    });
+  }
+
+  // Chemins par DEFAUT du routeur : .pallas/ledger.json, .pallas/risk-state.json,
+  // .pallas/alerts.jsonl — écrits via la même structure (PALLAS-M20).
+  function pallasFixture(risk: Record<string, unknown>): string {
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-observatory-'));
+    mkdirSync(join(dir, '.pallas'), { recursive: true });
+    writeFileSync(join(dir, '.pallas', 'ledger.json'), JSON.stringify({ root: 'pallas', entries: [] }));
+    const checksum = createHash('sha256').update(canonical({ version: 2, risk, orders: [], meta: undefined })).digest('hex');
+    writeFileSync(join(dir, '.pallas', 'risk-state.json'), JSON.stringify({ version: 2, checksum, risk, orders: [] }));
+    return dir;
+  }
+
+  it('readAlerts: lit les dernières lignes JSONL et ignore les lignes malformées', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-observatory-'));
+    const path = join(dir, 'alerts.jsonl');
+    writeFileSync(
+      path,
+      [
+        'cette ligne est du bruit',
+        alertLine('AMBIGUOUS_ORDER', 'order result unknown', '2026-09-11T10:00:00.000Z'),
+        alertLine('KILL_SWITCH', 'global kill switch ENGAGED', '2026-09-11T10:05:00.000Z'),
+      ].join('\n') + '\n',
+    );
+    const alerts = readAlerts(path);
+    expect(alerts).toHaveLength(2);
+    expect(alerts[0].anomaly).toBe('KILL_SWITCH'); // plus récente en tête
+    expect(alerts[0].subject).toBe('global kill switch ENGAGED');
+    expect(alerts[1].anomaly).toBe('AMBIGUOUS_ORDER');
+    expect(readAlerts(join(dir, 'absent.jsonl'))).toEqual([]);
+  });
+
+  it('snapshot: surface les alertes dans le dashboard et le pavé ALERTS', async () => {
+    const dir = pallasFixture({ hist_pnls: [1], circuit_breaker: { state: 'Closed' } });
+    writeFileSync(join(dir, '.pallas', 'alerts.jsonl'), alertLine('RECONCILE_FAILED', 'reconcile scope failed', '2026-09-11T10:00:00.000Z') + '\n');
+    const snapshot = await buildSnapshot({ rootDir: dir, fetcher: noNetwork, commit: null });
+    expect(snapshot.alerts).toHaveLength(1);
+    expect(snapshot.alerts[0].anomaly).toBe('RECONCILE_FAILED');
+    const html = renderDashboard(snapshot);
+    expect(html).toContain('ALERTS');
+    expect(html).toContain('RECONCILE_FAILED');
+  });
+
+  it('/api/status: expose l état réel (dry-run, kill switch, ordres) et critical=false sans incident', async () => {
+    const dir = pallasFixture({ hist_pnls: [1], kill_switch_engaged: false, circuit_breaker: { state: 'Closed' }, volatility: { window: [], baseline: null } });
+    const route = createReadOnlyRouter({ rootDir: dir, fetcher: noNetwork, commit: null });
+    const res = await route('GET', '/api/status');
+    expect(res.status).toBe(200);
+    const status = JSON.parse(res.body) as Record<string, unknown>;
+    expect(status.mode).toBe('DRY RUN');
+    expect((status.dryRun as Record<string, unknown>).status).toBe('ENABLED');
+    expect((status.killSwitch as Record<string, unknown>).engaged).toBe(false);
+    expect((status.ledger as Record<string, unknown>).status).toMatch(/^(VALID|EMPTY)$/);
+    expect(status.critical).toBe(false);
+    expect(Array.isArray(status.alerts)).toBe(true);
+  });
+
+  it('/api/status: un kill switch engagé + alerte = critical true et reflet incident', async () => {
+    const dir = pallasFixture({ hist_pnls: [1], kill_switch_engaged: true, circuit_breaker: { state: 'Closed' }, volatility: { window: [], baseline: null } });
+    writeFileSync(join(dir, '.pallas', 'alerts.jsonl'), alertLine('KILL_SWITCH', 'global kill switch ENGAGED', '2026-09-11T10:00:00.000Z') + '\n');
+    const route = createReadOnlyRouter({ rootDir: dir, fetcher: noNetwork, commit: null });
+    const res = await route('GET', '/api/status');
+    expect(res.status).toBe(200);
+    const status = JSON.parse(res.body) as Record<string, unknown>;
+    expect((status.alerts as unknown[]).length).toBeGreaterThanOrEqual(1);
+    expect((status.alerts as Array<{ anomaly: string }>)[0].anomaly).toBe('KILL_SWITCH');
+    expect(status.critical).toBe(true);
+  });
+
+  it('/api/status: un état durable CORRUPT (checksum) est remonté comme warning sans être béni', async () => {
+    const dir = pallasFixture({ hist_pnls: [1], kill_switch_engaged: false, circuit_breaker: { state: 'Closed' }, volatility: { window: [], baseline: null } });
+    const raw = JSON.parse(readFileSync(join(dir, '.pallas', 'risk-state.json'), 'utf8')) as { risk: Record<string, unknown> };
+    (raw.risk as Record<string, unknown>).hist_pnls = [999]; // falsification silencieuse
+    writeFileSync(join(dir, '.pallas', 'risk-state.json'), JSON.stringify(raw));
+    const route = createReadOnlyRouter({ rootDir: dir, fetcher: noNetwork, commit: null });
+    const res = await route('GET', '/api/status');
+    const status = JSON.parse(res.body) as Record<string, unknown>;
+    expect((status.warnings as string[]).some((w) => w.includes('CORRUPT'))).toBe(true);
+    expect(status.critical).toBe(true);
   });
 });

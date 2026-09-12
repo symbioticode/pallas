@@ -32,6 +32,9 @@ limites sont documentées ci-dessous et dans les rapports de mission `docs/missi
 | Permissions fichiers secrets : `chmod 600` appliqué par le code au chargement (Linux/NixOS) | ✔ | M19 |
 | Rotation credentials testée (scénario complet sur credentials de test) + runbook clé compromise | ✔ | M19 |
 | CI active (npm + cargo, audit) | ✔ | M06 |
+| CI actions SHA-pinnées + job couverture avec seuils | ✔ | M20 |
+| Alertes CRITICAL structurées (JSONL + webhook) sur les anomalies de l'audit | ✔ | M20 |
+| Objectifs RTO ≤ 15 min / RPO ≤ 1 cycle documentés | ✔ | M20 |
 
 ## Sandbox bwrap (phase 1.3) — portée réelle de la protection
 
@@ -217,3 +220,22 @@ comme fait.
   clés transitent par env/fichiers locaux. Pas de séparation de process (voir plus haut). Ces
   limites sont assumées pour le stade du projet, documentées, et ne sont pas présentées comme
   couvertes.
+
+### Objectifs RTO / RPO (PALLAS-M20)
+
+Objectifs **cibles** de reprise, cohérents avec une seule machine de trading en dry-run :
+
+| Objectif | Cible | Justification / limites |
+| --- | --- | --- |
+| RTO recovery objective | ≤ 15 min | Redémarrage du loop depuis l'état durable checksummé (fail-stop, jamais d'état neuf) ; pas de déploiement multi-node à réparer. |
+| RPO recovery point | ≤ 1 cycle (≈ 1 min) | Chaque transition d'état est écrite de façon durable **avant** l'émission réseau (M13) ; le ledger est append-only journalable. |
+| Fenêtre d'ambiguïté | ≤ 1 cycle après contact réseau | Un ordre ambigus est réconcilié immédiatement (M14) ; tant qu'il n'est pas réglé, le scope bloque toute émission (pas de double-soumission). |
+
+Points de mesure associés (M20) : l'état durable porte un `checksum` (corruption détectée au
+chargement → alerte `STATE_CORRUPT`), le ledger est chainé et `SIGNED` (M16), et chaque anomalie
+fait l'objet d'une alerte JSONL (`AMBIGUOUS_ORDER`, `RECONCILE_FAILED`, `KILL_SWITCH`,
+`LEDGER_CORRUPT`, `STATE_CORRUPT`) observable via `/api/status`.
+
+Ces objectifs ne sont **pas** garantis par contrat de service : pas de réplication, pas de
+rene-match. Ce sont des cibles de conception vérifiables par les tests (corruption → fail-stop →
+alerte) et le runbook, pas des SLIs contraignants.

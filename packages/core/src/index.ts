@@ -1,4 +1,5 @@
 export * from './credentials.js';
+export * from './observability.js';
 // PALLAS-M17 : dry-run expose PUBLICEMENT seulement la surface sûre.
 // `enableDryRun` (retour au mode simulation) est volontairement ABSENT du
 // paquet : aucun chemin de décision (ordre/agent) ne doit pouvoir réarmer

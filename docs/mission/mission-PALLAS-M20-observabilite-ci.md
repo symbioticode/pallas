@@ -5,7 +5,7 @@ Mission ID : PALLAS-M20
 Date de création : 2026-09-10
 Auteur / Agent : Claude (planification) — exécution par agent de code au choix
 Projet : Pallas
-Statut : ACTIF — 🟡 Moyenne, mais condition nécessaire pour toute prétention "supervisé"
+Statut : CLOTURÉE (2026-09-11)
 Dépend de : PALLAS-M13 (les événements à observer doivent déjà être structurés/tracés)
 Source de vérité : `AUDIT-PALLAS-v0.3.md` (F-10, section 8) + `.github/workflows/ci.yml`
 

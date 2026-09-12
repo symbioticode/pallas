@@ -16,6 +16,39 @@ export function createReadOnlyRouter(options: SnapshotOptions) {
       const snapshot = await buildSnapshot(options);
       return { status: 200, contentType: 'application/json; charset=utf-8', body: JSON.stringify({ generatedAt: snapshot.generatedAt, html: renderDashboard(snapshot) }), headers: { 'Cache-Control': 'no-store' } };
     }
+    // PALLAS-M20 — status compact (dry-run/kill switch/ordinateur/état réel
+    // après un cycle de l'orchestrateur). JSON léger pour ingestion opérationnelle.
+    if (pathname === '/api/status') {
+      const snapshot = await buildSnapshot(options);
+      const marketAgeMs =
+        snapshot.market.status === 'STALE'
+          ? snapshot.market.timestamp !== null
+            ? Math.max(0, Date.now() - Date.parse(snapshot.market.timestamp))
+            : null
+          : null;
+      const critical =
+        snapshot.alerts.length > 0 ||
+        snapshot.warnings.includes('LEDGER INVALID') ||
+        snapshot.warnings.some((w) => w.includes('CORRUPT')) ||
+        snapshot.warnings.some((w) => w.includes('RECONCILIATION')) ||
+        Boolean(snapshot.durability.killSwitchEngaged);
+      const body = {
+        generatedAt: snapshot.generatedAt,
+        status: 'OK',
+        mode: snapshot.system.mode,
+        dryRun: { status: snapshot.system.mode === 'DRY RUN' ? 'ENABLED' : 'DISABLED', confirmedLive: false },
+        ledger: { status: snapshot.system.ledger, signed: snapshot.system.ledgerSigned, entries: snapshot.system.ledgerEntries, lastEventAt: snapshot.system.lastEventAt },
+        loop: { status: snapshot.system.loop, ageSeconds: snapshot.system.loopAgeSeconds },
+        cycle: { status: snapshot.cycle.status, execution: snapshot.cycle.execution },
+        killSwitch: { engaged: snapshot.durability.killSwitchEngaged },
+        orders: { total: snapshot.durability.orderCount, live: snapshot.durability.liveOrders, reconciling: snapshot.durability.reconcilingOrders, liveExposureUsd: snapshot.risk.liveExposureUsd },
+        market: { status: snapshot.market.status, tokenId: snapshot.market.tokenId, bestBid: snapshot.market.bestBid, bestAsk: snapshot.market.bestAsk, timestamp: snapshot.market.timestamp, ageMs: marketAgeMs },
+        alerts: snapshot.alerts,
+        warnings: snapshot.warnings,
+        critical,
+      };
+      return { status: 200, contentType: 'application/json; charset=utf-8', body: JSON.stringify(body), headers: { 'Cache-Control': 'no-store' } };
+    }
     return { status: 404, contentType: 'text/plain; charset=utf-8', body: 'NOT FOUND\n' };
   };
 }

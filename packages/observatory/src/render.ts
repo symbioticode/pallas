@@ -56,6 +56,9 @@ export function renderDashboard(snapshot: ObservatorySnapshot): string {
     <dl><div><dt>REJECTED BY</dt><dd>${esc(snapshot.risk.rejectedBy.join(', ') || 'NONE')}</dd></div><div><dt>SUGGESTED SIZE USD</dt><dd>${value(snapshot.risk.suggestedSizeUsd, 2)}</dd></div><div><dt>CIRCUIT BREAKER</dt><dd>${esc(circuitState(snapshot.risk.circuitBreaker))}</dd></div><div><dt>P&amp;L SAMPLES</dt><dd>${snapshot.risk.pnlSampleSize ?? 'UNKNOWN'}</dd></div><div><dt>LIVE EXPOSURE USD</dt><dd>${value(snapshot.risk.liveExposureUsd, 2)}</dd></div></dl>
     <table><thead><tr><th>GATE</th><th>ACTION</th><th>REASON</th></tr></thead><tbody>${snapshot.risk.gates.length ? snapshot.risk.gates.map((gate) => `<tr><td>${esc(gate.gate)}</td><td>${badge(gate.action, gate.action === 'Allow' ? 'allow' : 'reject')}</td><td>${esc(gate.reason)}</td></tr>`).join('') : '<tr><td colspan="3">RISK STATE UNAVAILABLE</td></tr>'}</tbody></table>
   </section>
+  <section class="panel alerts"><header><h2>ALERTS</h2>${snapshot.alerts.length ? badge(`${snapshot.alerts.length} CRITICAL`, 'reject') : badge('OK', 'allow')}</header>
+    <ol>${snapshot.alerts.length ? snapshot.alerts.map((a) => `<li><time>${esc(a.ts)}</time><div><strong>${esc(a.anomaly)}</strong><span>${esc(a.subject)}</span></div></li>`).join('') : '<li class="empty">NO ACTIVE ALERTS</li>'}</ol>
+  </section>
   <section class="panel activity"><header><h2>ACTIVITY</h2><span>${snapshot.activity.length} RECENT</span></header>
     <ol>${snapshot.activity.length ? snapshot.activity.map((entry) => `<li><time>${esc(entry.timestamp)}</time><div><strong>${esc(entry.event)}</strong><span>${esc(summary(entry.event, entry.payload))}</span><details><summary>FULL PAYLOAD</summary><pre>${esc(JSON.stringify(entry.payload, null, 2))}</pre></details></div></li>`).join('') : '<li class="empty">NO CYCLE RECORDED</li>'}</ol>
   </section>`;

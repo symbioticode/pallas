@@ -20,15 +20,27 @@ import {
  * SKIPPENT explicitement (test.runIf) — jamais exécutés en clair, jamais un
  * faux rouge d'environnement. La preuve tourne là où bwrap est disponible.
  */
-async function bwrapUsable(): Promise<boolean> {
+async function bwrapProbe(): Promise<{ usable: boolean; reason: string }> {
   try {
     const res = await runSandboxed('python3', ['-c', 'pass'], { timeoutMs: 15_000 });
-    return res.exitCode === 0;
-  } catch {
-    return false;
+    return { usable: res.exitCode === 0, reason: res.exitCode === 0 ? 'ok' : 'exit != 0' };
+  } catch (err) {
+    const reason = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    return { usable: false, reason };
   }
 }
-const realBwrap = await bwrapUsable();
+const { usable: realBwrap, reason: bwrapDisabledReason } = await bwrapProbe();
+
+// PALLAS-M20 — skip EXPLICITE, jamais silencieux : si la sonde échoue
+// (bwrap absent ou unshare interdit par le noyau — cas typique d'un runner
+// CI), on logue la raison UNE FOIS dans la sortie des tests AVANT les skips.
+// Sans ce log, les tests `runIf(false)` passeraient sans expliquer pourquoi.
+if (!realBwrap) {
+  console.log(
+    '[PALLAS-M20-SANDBOX] bwrap NON utilisable sur ce runner — ' +
+      "les 4 tests d'isolation reseau sont SKIPPES. Raison : " + bwrapDisabledReason,
+  );
+}
 
 afterEach(() => {
   delete process.env.PALLAS_SANDBOX_BIN;

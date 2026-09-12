@@ -85,4 +85,11 @@ export interface ObservatorySnapshot {
   cycle: { status: 'RECORDED' | 'NONE'; execution: string | null };
   activity: ObservatoryRecord[];
   warnings: string[];
+  /** PALLAS-M20 : dernières alertes CRITICAL émises (JSONL `.pallas/alerts.jsonl`). */
+  alerts: Array<{
+    ts: string;
+    anomaly: string;
+    event: string;
+    subject: string;
+  }>;
 }

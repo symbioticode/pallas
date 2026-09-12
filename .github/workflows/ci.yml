@@ -10,17 +10,22 @@ on:
 # cargo-audit. Décision (annexe du journal M06, 2026-09-10) : l'action
 # actions-rust-lang/audit@v2 n'existe pas (dernière release v1.2.7) ;
 # `cargo audit` tourne désormais DANS le shell Nix.
+# PALLAS-M20 : toutes les actions sont épinglées par COMMIT SHA immuable
+# (jamais de tag majeur flottant — supply-chain). Résolutions au 2026-09-11 :
+#   actions/checkout@11d5960a (v4.4.0)
+#   DeterminateSystems/nix-installer-action@3138316d (v23)
+#   DeterminateSystems/magic-nix-cache-action@84c0677f (v15)
 jobs:
   typescript:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@v23
-      - uses: DeterminateSystems/magic-nix-cache-action@v15
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7
       # bwrap est fourni par le shell Nix : les tests d'isolation réseau tournent
       # pour de vrai sur le runner SI l'unshare y est permis ; sinon ils se
-      # skippent explicitement (sonde realBwrap dans sandbox.test.ts). Jamais
-      # d'exécution en clair (fail-closed).
+      # SKIPPENT EXPLICITEMENT avec raison dans la sortie CI (sonde realBwrap
+      # dans sandbox.test.ts, PALLAS-M20 : jamais de skip silencieux).
       # Le pont risk→binaire exige crates/risk-engine/target/{release,debug} :
       # job séparé du job rust (runner distinct) → build debug ici.
       - run: nix-shell --run "cd crates/risk-engine && cargo build"
@@ -33,7 +38,21 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@v23
-      - uses: DeterminateSystems/magic-nix-cache-action@v15
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7
       - run: nix-shell --run "cd crates/risk-engine && cargo test && cargo audit"
+
+  coverage:
+    runs-on: ubuntu-latest
+    needs: typescript
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa
+      - uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7
+      - run: nix-shell --run "cd crates/risk-engine && cargo build"
+      # PALLAS-M20 : seuil minimal de couverture en CI via c8/v8 + vitest
+      # --coverage. Seuils calibrés sous la mesure réelle du 2026-09-11
+      # (vitest.config.ts) — un échec CI si on régresse, jamais un seuil
+      # fantaisiste. `--reporter=text` affiche le détail dans la sortie.
+      - run: nix-shell --run "npm ci && npm run build && npm run coverage -- --reporter=text"
