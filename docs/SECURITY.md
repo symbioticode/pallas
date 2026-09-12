@@ -239,3 +239,18 @@ fait l'objet d'une alerte JSONL (`AMBIGUOUS_ORDER`, `RECONCILE_FAILED`, `KILL_SW
 Ces objectifs ne sont **pas** garantis par contrat de service : pas de réplication, pas de
 rene-match. Ce sont des cibles de conception vérifiables par les tests (corruption → fail-stop →
 alerte) et le runbook, pas des SLIs contraignants.
+
+## Chaîne d'audits — traçabilité (PALLAS-M21)
+
+Les rapports `docs/AUDIT-PALLAS-v*.md` (v0.1 → v0.4) sont désormais **suivis par git** : la règle
+d'exclusion `docs/AUDIT-PALLAS*.md` a été retirée du `.gitignore` en PALLAS-M21. Décision et
+motif :
+
+- la finalisation s'appuie sur une **chaîne d'audits comparés dans le temps** (v0.2.1 → v0.3 →
+  v0.4) ; un rapport non versionné n'est pas reconstructible sans la copie locale de son auteur ;
+- l'état antérieur était incohérent : `v0.1` était déjà suivi (ajouté avant la règle d'exclusion),
+  alors que `v0.2`, `v0.2.1`, `v0.3` et `v0.4` ne l'étaient pas ;
+- chaque rapport référence le commit HEAD de son époque, ce qui permet de confronter un verdict à
+  l'arbre exact qu'il a jugé (chaîne de provenance).
+
+Seul `.pallas/` (état/ledger local) reste volontairement hors git.
