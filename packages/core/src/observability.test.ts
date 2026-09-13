@@ -6,6 +6,7 @@ import {
   structuredEvent,
   emitAnomaly,
   resetAnomalyAlertsForTest,
+  flushAlertDeliveriesForTest,
   type AlertSink,
 } from './observability.js';
 
@@ -81,4 +82,45 @@ test('une anomalie déjà active ne re-poste pas le webhook', async () => {
   emitAnomaly('LEDGER_CORRUPT', 'again', undefined, s);
   await new Promise((r) => setTimeout(r, 10));
   expect(count).toBe(1);
+});
+test('PALLAS-M26 — webhook en échec puis OK : retry borné, livraison finalement réussie', async () => {
+  let calls = 0;
+  const fakeFetch = async () => {
+    calls += 1;
+    return new Response(calls < 3 ? 'boom' : 'ok', { status: calls < 3 ? 500 : 200 });
+  };
+  emitAnomaly('STATE_CORRUPT', 'retry-target', undefined, {
+    file: alertFile,
+    webhook: 'https://hook.example/i',
+    fetchFn: fakeFetch as unknown as typeof fetch,
+    webhookRetries: 2,
+    webhookBackoffMs: 1,
+  });
+  await flushAlertDeliveriesForTest();
+  expect(calls).toBe(3); // première tentative + 2 retries
+  const events = readFileSync(alertFile, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>);
+  expect(events.some((e) => e['event'] === 'ALERT_DELIVERY_FAILED')).toBe(false);
+});
+
+test('PALLAS-M26 — webhook durablement indisponible : échec final + ligne ALERT_DELIVERY_FAILED (backlog détectable)', async () => {
+  let calls = 0;
+  const fakeFetch = async () => {
+    calls += 1;
+    return new Response('down', { status: 503 });
+  };
+  emitAnomaly('RECONCILE_FAILED', 'scope unresolved', undefined, {
+    file: alertFile,
+    webhook: 'https://hook.example/i',
+    fetchFn: fakeFetch as unknown as typeof fetch,
+    webhookRetries: 1,
+    webhookBackoffMs: 1,
+  });
+  await flushAlertDeliveriesForTest();
+  expect(calls).toBe(2); // 1 + 1 retry
+  const events = readFileSync(alertFile, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>);
+  expect(events[0]!['anomaly']).toBe('RECONCILE_FAILED'); // la CRITICAL reste persistée localement
+  const fail = events.find((e) => e['event'] === 'ALERT_DELIVERY_FAILED');
+  expect(fail).toBeDefined();
+  expect(fail!['level']).toBe('WARN');
+  expect((fail!['context'] as Record<string, unknown>)['attempts']).toBe(2);
 });

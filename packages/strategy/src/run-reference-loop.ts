@@ -226,6 +226,10 @@ export async function runReferenceCycle(
 
   const trade = buildReferenceTradeRequest(signal, indicatorMs);
   const store = new DurableStateStore(opts.statePath);
+  // PALLAS-M23 : rattrapage état<->ledger AVANT toute décision. Un crash
+  // entre la transition ACKED durable et son entrée ledger (fenêtre D) laisse
+  // un ordre reconnu sans trace d'audit ; on répare ici, de façon idempotente.
+  await reconcileStateLedger(store, ledger);
 
   // --- étape 2.5 (PALLAS-M14) : réconciliation du scope AVANT la décision ---
   // Si l'échange dispose d'identifiants L2 (maker), on interroge la réalité
@@ -385,6 +389,54 @@ export async function runReferenceCycle(
     execution,
     ledgerRecords: ledger.length,
   };
+}
+
+/**
+ * PALLAS-M23 — réconciliation de démarrage ÉTAT <-> LEDGER (audit v0.4 F-01).
+ *
+ * L'état (snapshot checksummé) et le ledger (chaîne append-only) sont DEUX
+ * fichiers distincts, écrits séparément : un crash entre la transition durable
+ * ACKED et `ledger.append('execution_success')` laisse un ordre réel et
+ * reconnu SANS trace d'audit (fenêtre D). Ce rattrapage détecte les ordres ACKED
+ * dont le `correlation_id` n'apparaît dans AUCUNE entrée
+ * `execution_success` et émet une entrée de réparation — IDEMPOTENTE :
+ * une entrée déjà présente n'est jamais dupliquée.
+ *
+ * Fenêtre résiduelle assumée (documentée) : entre le crash et le prochain
+ * démarrage, le ledger ne porte pas encore la trace. L'état, lui, n'est jamais
+ * faux (il a été écrit DURABLEMENT avant l'appel réseau), et aucune ré-émission
+ * n'est possible sur ce correlationId (empreinte ACKED -> gate de scope M14).
+ */
+export async function reconcileStateLedger(
+  store: DurableStateStore,
+  ledger: FileLedger,
+): Promise<{ repaired: number; checked: number }> {
+  const doc = store.read();
+  const acknowledged = doc.orders.filter((o) => o.status === 'ACKED' && o.order_id != null);
+  if (acknowledged.length === 0) return { repaired: 0, checked: 0 };
+  const traced = new Set(
+    ledger.entries
+      .filter((e) => e.event === 'execution_success')
+      .map((e) => (e.payload as { correlation_id?: string } | undefined)?.correlation_id)
+      .filter((id): id is string => typeof id === 'string'),
+  );
+  let repaired = 0;
+  for (const order of acknowledged) {
+    if (traced.has(order.correlationId)) continue;
+    await ledger.append({
+      event: 'execution_success',
+      timestamp: new Date().toISOString(),
+      payload: {
+        recovered_at_restart: true,
+        orderId: order.order_id,
+        correlation_id: order.correlationId,
+        outcome: order.outcome ?? 'acked',
+        note: 'PALLAS-M23 — rattrapage: etat ACKED sans entree ledger (crash fenetre D)',
+      },
+    });
+    repaired += 1;
+  }
+  return { repaired, checked: acknowledged.length };
 }
 
 /** Statut courant du lifecycle (lecture fraîche du disque, fail-stop). */
@@ -574,6 +626,9 @@ async function main(): Promise<void> {
     return;
   }
   const cycles = Math.max(1, Number(process.env.PALLAS_REF_CYCLES ?? '3') || 3);
+  // PALLAS-M27 : pause entre cycles pour une campagne d'observation longue
+  // (sans marteler l'API). 0 = comportement d'origine.
+  const cycleSleepMs = Math.max(0, Number(process.env.PALLAS_REF_CYCLE_SLEEP_MS ?? '0') || 0);
   const threshold = Number(process.env.PALLAS_REF_THRESHOLD ?? '0.6');
   const size = Number(process.env.PALLAS_REF_SIZE ?? '1');
   // PALLAS-M15 : la configuration de risque est OPERATEUR, jamais portée par un
@@ -625,6 +680,10 @@ async function main(): Promise<void> {
   let store: DurableStateStore;
   try {
     store = new DurableStateStore(statePath);
+    // PALLAS-M26 : la CONSTRUCTION ne lit rien — c'est la LECTURE qui peut
+    // échouer sur corruption. On lit ici pour un fail-stop au démarrage.
+    // `read()` émet lui-même STATE_CORRUPT au point de détection réel.
+    store.read();
   } catch (err) {
     emitAnomaly('STATE_CORRUPT', 'durable state load fail-stop triggered', {
       path: statePath,
@@ -658,11 +717,20 @@ async function main(): Promise<void> {
       payload: { ...record, elapsed_ms: Date.now() - killStart },
     });
   } catch (err) {
+    // PALLAS-M26 : si l'erreur EST une corruption d'état, `store.read()`
+    // relève StateCorruptionError ; cette seconde lecture ne doit ni masquer
+    // l'erreur d'origine ni faire crasher le chemin d'alerte.
+    let engaged: boolean | null = null;
+    try {
+      engaged = store.read().risk.kill_switch_engaged;
+    } catch {
+      engaged = null;
+    }
     await ledger.append({
       event: 'kill_switch_sync',
       timestamp: new Date().toISOString(),
       payload: {
-        engaged: store.read().risk.kill_switch_engaged,
+        engaged,
         error: err instanceof Error ? err.message.slice(0, 300) : String(err),
         elapsed_ms: Date.now() - killStart,
       },
@@ -694,6 +762,7 @@ async function main(): Promise<void> {
       externalText,
     });
     console.log(JSON.stringify(result));
+    if (cycleSleepMs > 0) await new Promise((r) => setTimeout(r, cycleSleepMs));
   }
 
   const diskLedger = FileLedger.load(ledgerPath, { publicKeyPem: ledgerPublicKey });

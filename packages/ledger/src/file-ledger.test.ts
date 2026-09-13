@@ -4,7 +4,7 @@
  * falsification par recalcul détectée, append durable sous verrou.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,6 +14,7 @@ import {
   LedgerIntegrityError,
   LedgerLoadError,
   ledgerCheckpointPath,
+  resolveLedgerMode,
 } from './file-ledger.js';
 import { generateLedgerSigningKeyPair, signLedgerCheckpoint } from './ledger-signing.js';
 import { Ledger, recomputeRecordHash, type LedgerRecord } from './ledger.js';
@@ -222,6 +223,85 @@ describe('M16: append sous verrou — durable et frais', () => {
     expect(FileLedger.load(env.path).entries.map((e) => e.event)).toEqual(['x', 'y', 'z', 'w']);
     expect(w1.entries.length).toBe(3); // w1 en mémoire est à son propre point d'écriture
     expect(w2.entries.length).toBe(4);
+    rmSync(env.dir, { recursive: true, force: true });
+  });
+});
+describe('M24: mode supervisé vs dev — la signature par défaut, pas une option', () => {
+  const savedMode = process.env.PALLAS_LEDGER_MODE;
+  const savedTest = process.env.PALLAS_TEST_MODE;
+  afterEach(() => {
+    if (savedMode === undefined) delete process.env.PALLAS_LEDGER_MODE;
+    else process.env.PALLAS_LEDGER_MODE = savedMode;
+    if (savedTest === undefined) delete process.env.PALLAS_TEST_MODE;
+    else process.env.PALLAS_TEST_MODE = savedTest;
+    vi.restoreAllMocks();
+  });
+
+  it('resolveLedgerMode : explicite > env > test > défaut ; valeur invalide = erreur (jamais devinée)', () => {
+    expect(resolveLedgerMode('supervised')).toBe('supervised');
+    expect(resolveLedgerMode('dev')).toBe('dev');
+    process.env.PALLAS_LEDGER_MODE = 'supervised';
+    delete process.env.PALLAS_TEST_MODE;
+    expect(resolveLedgerMode()).toBe('supervised');
+    process.env.PALLAS_LEDGER_MODE = 'dev';
+    expect(resolveLedgerMode()).toBe('dev');
+    process.env.PALLAS_LEDGER_MODE = 'yolo';
+    expect(() => resolveLedgerMode()).toThrow(/invalide/);
+    delete process.env.PALLAS_LEDGER_MODE;
+    process.env.PALLAS_TEST_MODE = '1';
+    expect(resolveLedgerMode()).toBe('dev');
+    delete process.env.PALLAS_TEST_MODE;
+    expect(resolveLedgerMode()).toBe('supervised');
+  });
+
+  it('mode supervised SANS clé publique => FATAL au démarrage (plus d oubli silencieux)', async () => {
+    const env = tempEnv();
+    const fl = FileLedger.load(env.path, { mode: 'dev' });
+    await fl.append({ event: 'a', timestamp: T0, payload: { v: 1 } });
+    expect(() => FileLedger.load(env.path, { mode: 'supervised' })).toThrow(LedgerIntegrityError);
+    expect(() => FileLedger.load(env.path, { mode: 'supervised' })).toThrow(/supervised/);
+    rmSync(env.dir, { recursive: true, force: true });
+  });
+
+  it('mode dev SANS clé : ledger non signé accepté mais avertissement BRUYANT émis', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const env = tempEnv();
+    const fl = FileLedger.load(env.path, { mode: 'dev' });
+    expect(fl.isSigned).toBe(false);
+    expect(warn).toHaveBeenCalled();
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(/LEDGER NON SIGNE/);
+    rmSync(env.dir, { recursive: true, force: true });
+  });
+
+  it('falsification NON SIGNÉE (audit v0.4) : acceptée en dev (avertissement), le run supervisé REFUSE de démarrer', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const env = tempEnv();
+    const fl = FileLedger.load(env.path, { mode: 'dev' });
+    await fl.append({ event: 'a', timestamp: T0, payload: { v: 1 } });
+    await fl.append({ event: 'b', timestamp: T0, payload: { v: 2 } });
+    const doc = JSON.parse(readFileSync(env.path, 'utf8')) as { root: string; entries: LedgerRecord[] };
+    forgeChainAndRecalculate(doc);
+    writeFileSync(env.path, JSON.stringify(doc), 'utf8');
+    // l attaque réussit LOCALEMENT (chaînage recalculé) : c est l UNSIGNED_FORGERY_ACCEPTED de l audit.
+    expect(Ledger.fromJSON(doc).verify().valid).toBe(true);
+    // dev : accepté, mais signalé bruyamment.
+    expect(FileLedger.load(env.path, { mode: 'dev' }).verify().valid).toBe(true);
+    expect(warn).toHaveBeenCalled();
+    // supervisé : le run réel refuse de démarrer sans clé => défaut fermé.
+    expect(() => FileLedger.load(env.path, { mode: 'supervised' })).toThrow(LedgerIntegrityError);
+    rmSync(env.dir, { recursive: true, force: true });
+  });
+
+  it('falsification SIGNÉE puis chaîne réécrite : rejetée MÊME sans clé publique (ancrage actif quel que soit le mode)', async () => {
+    const env = tempEnv();
+    const fl = FileLedger.load(env.path, { mode: 'dev' });
+    await fl.append({ event: 'a', timestamp: T0, payload: { v: 1 } });
+    await fl.append({ event: 'b', timestamp: T0, payload: { v: 2 } });
+    signLedgerFile(env.keyPath, env.path);
+    const doc = JSON.parse(readFileSync(env.path, 'utf8')) as { root: string; entries: LedgerRecord[] };
+    forgeChainAndRecalculate(doc); // la tête signée n existe plus dans la chaîne
+    writeFileSync(env.path, JSON.stringify(doc), 'utf8');
+    expect(() => FileLedger.load(env.path, { mode: 'dev' })).toThrow(LedgerIntegrityError);
     rmSync(env.dir, { recursive: true, force: true });
   });
 });

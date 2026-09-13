@@ -15,7 +15,7 @@ aucune ne passe par `@pallas` aujourd'hui.
 | passphrase | `PALLAS_CREDENTIAL_KEY` — dérive la clé AES-256-GCM du vault |
 | API key | credentials CLOB Polymarket (`apiKey`/`apiSecret`), révocables côté plateforme |
 | ledger | journal chaîné SHA-256 + checkpoint signé Ed25519 (`packages/ledger`) |
-| cancel-all | capacité d'annulation massive des ordres — **dépend de PALLAS-M14** (non livrée) |
+| cancel-all | capacité d'annulation massive des ordres — **livrée (PALLAS-M14), durcie PALLAS-M25** |
 
 Prérequis pour ce runbook : accès au compte CLOB (dashboard API), accès au wallet
 (Ethereum/Polygon), shell avec le dépôt Pallas monté, `openssl`.
@@ -49,16 +49,17 @@ Prérequis pour ce runbook : accès au compte CLOB (dashboard API), accès au wa
 
 ## 4. Annuler les ordres ouverts (cancel-all industrielle)
 
-> **Blocage assumé** : la capacité d'annulation massive programmatique dépend de PALLAS-M14
-> (non livrée au 2026-09-11). Tant qu'elle n'est pas livrée :
+> **Capacité disponible (PALLAS-M14 livrée, durcie PALLAS-M25).** L'arrêt d'urgence est
+> désormais outillé, mais rien ne remplace la décision opérateur :
 >
-> - **Ordres ouverts** : annulation MANUELLE sur le dashboard CLOB, ordre par ordre, en
->   commençant par les plus grands notionales.
-> - **Fonds** : si la clé privée wallet est compromise, supposer que les fonds du compte
->   peuvent être drainés AVANT toute annulation → transfert vers un wallet de secours
->   PREMIER (section 5), l'annulation des ordres étant moins critique qu'un drain.
-> - **Après PALLAS-M14 livrée** : `cancel-all` sur l'ensemble des marchés, avec relecture du
->   ledger pour tout ordre suspect (section 6) AVANT le cancel.
+> - **Arrêt immédiat SANS code** : créer le fichier-drapeau `.pallas/KILL` (ou le chemin
+>   `PALLAS_KILL_SWITCH_FILE`). Le point d'émission refuse alors tout ordre (M25) et
+>   `enforceKillSwitch` déclenche un `cancelAllOrders()` RÉEL (`DELETE /cancel-all`).
+> - **Fonds d'abord si la clé privée wallet est compromise** : transférer vers un wallet de
+>   secours (section 5) AVANT toute annulation — un drain est plus critique qu'un ordre
+>   resté ouvert.
+> - **Ordres ouverts** : `cancel-all` sur l'ensemble des marchés, avec relecture du ledger
+>   pour tout ordre suspect (section 6) AVANT le cancel.
 
 ## 5. Rotation (clé privée wallet OU passphrase)
 
@@ -72,6 +73,10 @@ sur le MATÉRIEL COMPROMIS OU PAS :
 3. **Vault** : re-chiffrer avec une NOUVELLE passphrase `openssl rand -hex 32`
    (jamais réutiliser l'ancienne, même si elle n'est PAS compromise). Écrire le vault AVEC
    permissions `0600` (le code refuse les fichiers trop larges — `SecretFilePermissionsError`).
+   Procédure REPRODUCTIBLE et versionnée : `node scripts/rotate-credentials.mjs` — génère des
+   credentials de TEST à la volée, re-chiffre, vérifie que l'ancienne passphrase n'ouvre plus
+   le nouveau vault, applique `0600`, et rapporte explicitement si un testnet a réellement été
+   utilisé (sinon « skipped », jamais présenté comme une exécution réelle).
 4. **Nettoyer** : `shred -u` l'ancien fichier vault/env si le support est un disque classique ;
    documentation du remplacement dans le journal de rotation.
 
@@ -109,6 +114,9 @@ sur le MATÉRIEL COMPROMIS OU PAS :
 
 ## Limites assumées du runbook
 
-- cancel-all dépend de PALLAS-M14 (non livrée) → annulation manuelle en attendant.
+- cancel-all est livré (M14) et déclenchable par le fichier externe `.pallas/KILL` (M25).
+- Aucun testnet CLOB Polymarket officiel n'est connu : la dérivation/révocation réelle contre
+  un testnet n'a donc pas été exécutée par PALLAS-M28 (voir journal). La procédure exacte pour
+  un opérateur disposant d'un accès est fournie par `scripts/rotate-credentials.mjs`.
 - Aucune intégration KMS : la passphrase vit en env local ; la compromission machine =
   présomption de fuite de tout secret en clair (SECURITY.md § custody).
