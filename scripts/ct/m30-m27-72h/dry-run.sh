@@ -4,6 +4,7 @@
 set -u
 
 REPO=/home/andrei/Projects/80_PALLAS/pallas
+BUNDLE=${CT_BUNDLE_DIR:-$REPO/scripts/ct/m30-m27-72h}
 LAUNCHER=scripts/m27-72h-run.mjs
 SUPERVISOR=scripts/observation-campaign.mjs
 RUNLOG=$REPO/.pallas/m27-72h-wrapper.log
@@ -35,6 +36,11 @@ for entry in "${REQUIRED[@]}"; do
   path=${entry%%:*}; label=${entry#*:}
   if [[ -f "$REPO/$path" ]]; then ok "artefact $label: $path"; else bad "artefact manquant $label: $path"; fi
 done
+if node "$BUNDLE/verify-artifact-pins.mjs" --manifest "$BUNDLE/bundle-manifest.json" --root "$REPO"; then
+  ok "8/8 artefacts conformes au manifeste"
+else
+  bad "controle SHA-256 des 8 artefacts rejete"
+fi
 
 # 2. Syntaxe des scripts orchestrés
 for f in "scripts/m27-72h-run.mjs" "scripts/observation-campaign.mjs"; do

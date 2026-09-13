@@ -12,18 +12,25 @@ if [[ "${CT_DRY_RUN:-1}" != "0" ]]; then
 fi
 
 REPO=/home/andrei/Projects/80_PALLAS/pallas
+BUNDLE=${CT_BUNDLE_DIR:?CT_BUNDLE_DIR doit designer le bundle CT-2026-020}
+MANIFEST=$BUNDLE/bundle-manifest.json
+PIN_CHECKER=$BUNDLE/verify-artifact-pins.mjs
 LAUNCHER=scripts/m27-72h-run.mjs
-SUPERVISOR=scripts/observation-campaign.mjs
 RUNLOG=$REPO/.pallas/m27-72h-wrapper.log
 PIDFILE=$REPO/.pallas/m27-72h-run.pid
 CURRENT=$REPO/.pallas/m27-72h-current
 TOKENS="30630994248667897740988010928640156931882346081873066002335460180076741328029,109876868437950584369987384406356259939519193117253465815665152916226511121427,113287701564209339913693347405685749986285999146352375265161592243948562084773,40081275558852222228080198821361202017557872256707631666334039001378518619916"
-EXPECTED_LAUNCHER_SHA=c3f606a0b7f9bef0edb065e697e108a6dfeb25ea3422577764f6914996c8e7aa
-EXPECTED_SUPERVISOR_SHA=6eeae8fd5071341977376ca9571af203bb3212bd941a710251d795f88b209b1b
-
 mkdir -p "$REPO/.pallas"
 cd "$REPO"
 echo "CT_START real_mutation=true token_targets=4"
+
+# Vérifier l'intégralité du payload avant toute mutation ou neutralisation.
+[[ -f "$MANIFEST" && -f "$PIN_CHECKER" && -d "$BUNDLE/artifacts" ]] || {
+  echo "CT_START_ERROR bundle incomplet: $BUNDLE"; exit 1;
+}
+node "$PIN_CHECKER" --manifest "$MANIFEST" --root "$BUNDLE/artifacts" || {
+  echo "CT_START_ERROR artifact pin verification rejected"; exit 1;
+}
 
 # --- 1. Neutralisation d'un lancement antérieur (rollback de sécurité) ---
 launcher_pids() {
@@ -57,17 +64,15 @@ cleanup_launcher() {
 cleanup_launcher
 
 # --- 2. Installation des artefacts figés (hash-pinned dans le manifest) ---
-if [[ ! -d "$CT_BUNDLE_DIR/artifacts" ]]; then
-  echo "CT_START_ERROR bundle artifacts absents: $CT_BUNDLE_DIR/artifacts"; exit 1
-fi
-install -m 0755 "$CT_BUNDLE_DIR/artifacts/m27-72h-run.mjs" "$REPO/$LAUNCHER"
-install -m 0755 "$CT_BUNDLE_DIR/artifacts/observation-campaign.mjs" "$REPO/$SUPERVISOR"
-launcher_sha=$(sha256sum "$REPO/$LAUNCHER" | cut -d' ' -f1)
-supervisor_sha=$(sha256sum "$REPO/$SUPERVISOR" | cut -d' ' -f1)
-[[ "$launcher_sha" == "$EXPECTED_LAUNCHER_SHA" ]] || { echo "CT_START_ERROR launcher hash mismatch"; exit 1; }
-[[ "$supervisor_sha" == "$EXPECTED_SUPERVISOR_SHA" ]] || { echo "CT_START_ERROR supervisor hash mismatch"; exit 1; }
-echo "install_ok launcher_sha=$launcher_sha"
-echo "install_ok supervisor_sha=$supervisor_sha"
+while IFS= read -r path; do
+  mode=0644
+  [[ "$path" == scripts/* || "$path" == crates/risk-engine/target/debug/risk-engine ]] && mode=0755
+  install -D -m "$mode" "$BUNDLE/artifacts/$path" "$REPO/$path"
+  echo "install_ok artifact=$path"
+done < <(node -e 'const m=require(process.argv[1]); for (const p of Object.keys(m.artifacts)) console.log(p)' "$MANIFEST")
+node "$PIN_CHECKER" --manifest "$MANIFEST" --root "$REPO" || {
+  echo "CT_START_ERROR installed artifact verification rejected"; exit 1;
+}
 
 # --- 3. Lancement détaché du wrapper (survit au runner). IMPORTANT : le service
 # timer qui invoque ce script doit porter KillMode=process, sinon systemd tue la

@@ -7,6 +7,8 @@ set -euo pipefail
 REPO=/home/andrei/Projects/80_PALLAS/pallas
 cd "$REPO"
 
+bash "$REPO/scripts/ct/m30-m27-72h/artifact-pin-test.sh"
+
 FIX=$(mktemp -d /tmp/m27-ct-fixture.XXXXXX)
 trap 'rm -rf "$FIX"' EXIT
 
