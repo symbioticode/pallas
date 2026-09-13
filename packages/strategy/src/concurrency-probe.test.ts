@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -34,6 +34,7 @@ const PROBE = join(PROJECT_ROOT, 'scripts', 'durable-state-concurrency-probe.mjs
  * nombre de processus et d'itérations inchangés.
  */
 const PROBE_TIMEOUT_MS = 30_000;
+const PROBE_ENV = { ...process.env, PALLAS_TEST_MODE: '1', PALLAS_LEDGER_MODE: 'dev' };
 
 /**
  * PALLAS-M21 — extraction du verdict JSON d'une probe, avec diagnostic.
@@ -44,8 +45,9 @@ const PROBE_TIMEOUT_MS = 30_000;
  * indication du processus, du flux ni du moment. Ici, une sortie vide ou
  * non-JSON échoue en NOMMANT la probe et en exposant stdout/stderr.
  */
-function probeResult(r: { stdout: string; stderr: string }, label: string): { pid: number } {
-  const lines = r.stdout
+function probeResult(r: { stdout: string; stderr: string }, label: string, resultPath: string): { pid: number } {
+  const output = r.stdout.trim() === '' ? readFileSync(resultPath, 'utf8') : r.stdout;
+  const lines = output
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l !== '');
@@ -69,15 +71,17 @@ describe('PALLAS-M13 — concurrence interprocessus (perte d\'écriture = échec
   it('2 processus × 5 itérations ⇒ exactement 10 cycles de vie dans l\'état', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'pallas-cc-'));
     const statePath = join(dir, 'risk-state.json');
+    const result1 = join(dir, 'probe-1.json');
+    const result2 = join(dir, 'probe-2.json');
     const iterations = 5;
 
     const nodeBin = process.execPath;
     const [p1, p2] = await Promise.all([
-      execFileAsync(nodeBin, [PROBE, statePath, String(iterations)], { cwd: PROJECT_ROOT }),
-      execFileAsync(nodeBin, [PROBE, statePath, String(iterations)], { cwd: PROJECT_ROOT }),
+      execFileAsync(nodeBin, [PROBE, statePath, String(iterations), result1], { cwd: PROJECT_ROOT, env: PROBE_ENV }),
+      execFileAsync(nodeBin, [PROBE, statePath, String(iterations), result2], { cwd: PROJECT_ROOT, env: PROBE_ENV }),
     ]);
-    const out1 = probeResult(p1, 'M13/2proc#1');
-    const out2 = probeResult(p2, 'M13/2proc#2');
+    const out1 = probeResult(p1, 'M13/2proc#1', result1);
+    const out2 = probeResult(p2, 'M13/2proc#2', result2);
     expect(out1.pid).not.toBe(out2.pid); // vraiment DEUX processus distincts
 
     const { DurableStateStore } = await import('@pallas/strategy');
@@ -96,7 +100,7 @@ describe('PALLAS-M13 — concurrence interprocessus (perte d\'écriture = échec
 
     const runs = await Promise.all(
       [0, 1, 2, 3].map(() =>
-        execFileAsync(nodeBin, [PROBE, statePath, String(iterations)], { cwd: PROJECT_ROOT }),
+        execFileAsync(nodeBin, [PROBE, statePath, String(iterations)], { cwd: PROJECT_ROOT, env: PROBE_ENV }),
       ),
     );
     runs.forEach((r) => expect(r.stderr).toBe(''));

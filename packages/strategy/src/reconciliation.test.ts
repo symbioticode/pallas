@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -31,6 +31,7 @@ import {
 } from './durable-state.js';
 import {
   reconcileOrder,
+  reconcileAllUnresolved,
   reconcileAtStartup,
   enforceKillSwitch,
   scopeHasLiveFootprint,
@@ -595,9 +596,68 @@ describe('réconciliation — scope & tour de garde', () => {
     expect(o.status).toBe('TERMINAL'); // réconcilié malgré l'absence de signal
     expect(o.terminal_reason).toBe('filled');
   });
+
+  test('M30/R-02 — un fichier KILL créé entre deux cycles déclenche cancel-all', async () => {
+    const { store, dir } = setupStore();
+    const flagDir = mkdtempSync(join(tmpdir(), 'pallas-m30-cycle-kill-'));
+    const flag = join(flagDir, 'KILL');
+    vi.stubEnv('PALLAS_KILL_SWITCH_FILE', flag);
+    let cancels = 0;
+    const client = liveClient({});
+    vi.spyOn(client, 'cancelAllOrders').mockImplementation(async () => {
+      cancels += 1;
+      return { cancelled: true, dryRun: false };
+    });
+    const opts = cycleOpts(store, dir, client)({
+      strategy: new ReferenceStrategy({ tokenIds: [TOKEN], buyThreshold: 0.4, size: 1 }),
+    });
+    await runReferenceCycle(1, opts);
+    expect(cancels).toBe(0);
+    writeFileSync(flag, 'stop', 'utf8');
+    await runReferenceCycle(2, opts);
+    expect(cancels).toBe(1);
+  });
 });
 
 describe('réconciliation au démarrage', () => {
+  test('M30/R-01 — N=5 mutualise getOpenOrders : 1 scan ouvert + 5 scans trades', async () => {
+    const { store } = setupStore();
+    for (let i = 0; i < 5; i += 1) {
+      await pushOrder(store, transitionLifecycle(
+        newLifecycle({ market_id: `market-${i}`, side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1 }),
+        { status: 'AMBIGUOUS', outcome: 'pending_reconciliation' },
+      ));
+    }
+    const client = liveClient({ openOrders: [], trades: [] });
+    const openSpy = vi.spyOn(client, 'getOpenOrders');
+    const tradesSpy = vi.spyOn(client, 'getTrades');
+    const result = await reconcileAllUnresolved({ store, client, maker: ADDR });
+    expect(result.results).toHaveLength(5);
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(tradesSpy).toHaveBeenCalledTimes(5);
+  });
+
+  test('M30/R-01 — deux passes simultanées partagent un seul vol réseau', async () => {
+    const { store } = setupStore();
+    for (let i = 0; i < 3; i += 1) {
+      await pushOrder(store, transitionLifecycle(
+        newLifecycle({ market_id: `overlap-${i}`, side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1 }),
+        { status: 'AMBIGUOUS', outcome: 'pending_reconciliation' },
+      ));
+    }
+    const client = liveClient({ openOrders: [], trades: [] });
+    const openSpy = vi.spyOn(client, 'getOpenOrders');
+    const tradesSpy = vi.spyOn(client, 'getTrades');
+    const ctx = { store, client, maker: ADDR };
+    const first = reconcileAllUnresolved(ctx);
+    const second = reconcileAllUnresolved(ctx);
+    expect(second).toBe(first);
+    const [a, b] = await Promise.all([first, second]);
+    expect(a).toEqual(b);
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(tradesSpy).toHaveBeenCalledTimes(3);
+  });
+
   test('recense un ordre OUVERT externe absent de l\'état local comme ACKED "externé"', async () => {
     const { store } = setupStore();
     // Un ordre local résolu (non bloquant) + un ordre externe vivant.
@@ -619,6 +679,27 @@ describe('réconciliation au démarrage', () => {
 });
 
 describe('enforceKillSwitch — une seule sortie, idempotente', () => {
+  test('M30/R-02 — présent → retiré → redéposé appelle cancel-all deux fois', async () => {
+    const { store } = setupStore();
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-m30-kill-toggle-'));
+    const flag = join(dir, 'KILL');
+    vi.stubEnv('PALLAS_KILL_SWITCH_FILE', flag);
+    const client = liveClient({});
+    let cancels = 0;
+    vi.spyOn(client, 'cancelAllOrders').mockImplementation(async () => {
+      cancels += 1;
+      return { cancelled: true, dryRun: false };
+    });
+
+    writeFileSync(flag, 'first', 'utf8');
+    expect((await enforceKillSwitch(store, client)).cancelAll).toBe('called');
+    expect((await enforceKillSwitch(store, client)).cancelAll).toBe('not_needed');
+    unlinkSync(flag);
+    expect((await enforceKillSwitch(store, client)).engaged).toBe(false);
+    writeFileSync(flag, 'second', 'utf8');
+    expect((await enforceKillSwitch(store, client)).cancelAll).toBe('called');
+    expect(cancels).toBe(2);
+  });
   test('kill switch désengagé : synchronise le flag global à false, aucun cancel-all', async () => {
     setGlobalKillSwitch(true); // simulateur d'un engagement résiduel du process
     const { store } = setupStore();

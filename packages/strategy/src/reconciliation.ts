@@ -48,6 +48,12 @@ export interface ReconcileContext {
   maker: string;
 }
 
+interface OpenOrdersSnapshot {
+  ok: boolean;
+  orders: ReadOrder[];
+  error?: string;
+}
+
 const SIDE_TO_CLOB: Record<string, string> = { buy: 'BUY', sell: 'SELL' };
 
 /**
@@ -150,6 +156,7 @@ function matchesTrade(order: OrderLifecycle, trade: ReadTrade): boolean {
 export async function reconcileOrder(
   ctx: ReconcileContext,
   correlationId: string,
+  openSnapshot?: OpenOrdersSnapshot,
 ): Promise<ReconciliationResult | null> {
   const { store, client, maker } = ctx;
 
@@ -184,7 +191,7 @@ export async function reconcileOrder(
   }
 
   // (2) Preuve réseau (lecture seule, jamais d'écriture).
-  const evidence = await gatherEvidence(client, maker, order);
+  const evidence = await gatherEvidence(client, maker, order, openSnapshot);
 
   // (3) Convergence idempotente sous verrou.
   return store.withLock((doc2) => {
@@ -242,7 +249,12 @@ interface Evidence {
   errors: string[];
 }
 
-async function gatherEvidence(client: PolymarketClient, maker: string, order: OrderLifecycle): Promise<Evidence> {
+async function gatherEvidence(
+  client: PolymarketClient,
+  maker: string,
+  order: OrderLifecycle,
+  openSnapshot?: OpenOrdersSnapshot,
+): Promise<Evidence> {
   const ev: Evidence = { openScanOk: false, tradesScanOk: false, tradeCount: 0, filledQuantity: 0, errors: [] };
 
   // (0) Preuve directe par order_id — l'exchange couvre explicitement les
@@ -258,12 +270,18 @@ async function gatherEvidence(client: PolymarketClient, maker: string, order: Or
   }
 
   // (1) Scan des ordres OUVERTS (ordre vivant).
-  try {
-    const open = await client.getOpenOrders(maker, { filterState: 'open' });
-    ev.openScanOk = true;
-    ev.openMatch = open.find((remote) => matchesOpen(order, remote));
-  } catch (err) {
-    ev.errors.push(`getOpenOrders: ${err instanceof Error ? err.message : String(err)}`);
+  if (openSnapshot) {
+    ev.openScanOk = openSnapshot.ok;
+    ev.openMatch = openSnapshot.orders.find((remote) => matchesOpen(order, remote));
+    if (!openSnapshot.ok) ev.errors.push(`getOpenOrders: ${openSnapshot.error ?? 'snapshot failed'}`);
+  } else {
+    try {
+      const open = await client.getOpenOrders(maker, { filterState: 'open' });
+      ev.openScanOk = true;
+      ev.openMatch = open.find((remote) => matchesOpen(order, remote));
+    } catch (err) {
+      ev.errors.push(`getOpenOrders: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   // (2) Historique des TRADES/FILLS — la preuve positive qui manquait.
@@ -383,17 +401,40 @@ export async function reconcileScopeForMarket(
  * jamais. Cette variante est destinée à être appelée à CHAQUE cycle, y compris
  * `no_signal`.
  */
-export async function reconcileAllUnresolved(
-  ctx: ReconcileContext,
-): Promise<{ results: ReconciliationResult[]; clear: boolean }> {
+type ReconcileAllResult = { results: ReconciliationResult[]; clear: boolean };
+const reconcileFlights = new Map<string, Promise<ReconcileAllResult>>();
+
+async function runReconcileAllUnresolved(ctx: ReconcileContext): Promise<ReconcileAllResult> {
   const unresolved = ctx.store.read().orders.filter((o) => isUnresolved(o));
   const results: ReconciliationResult[] = [];
+  if (unresolved.length === 0) return { results, clear: true };
+
+  // M30 : /data/orders renvoie déjà tous les ordres ouverts du maker. Le lire
+  // une fois par ordre coûtait N appels identiques ; une passe partage désormais
+  // le même snapshot. Les trades restent filtrés par asset et les getOrder par id.
+  let openSnapshot: OpenOrdersSnapshot;
+  try {
+    openSnapshot = { ok: true, orders: await ctx.client.getOpenOrders(ctx.maker, { filterState: 'open' }) };
+  } catch (err) {
+    openSnapshot = { ok: false, orders: [], error: err instanceof Error ? err.message : String(err) };
+  }
   for (const order of unresolved) {
-    const res = await reconcileOrder(ctx, order.correlationId);
+    const res = await reconcileOrder(ctx, order.correlationId, openSnapshot);
     if (res) results.push(res);
   }
   const remaining = ctx.store.read().orders.filter((o) => isUnresolved(o));
   return { results, clear: remaining.length === 0 };
+}
+
+export function reconcileAllUnresolved(ctx: ReconcileContext): Promise<ReconcileAllResult> {
+  const key = ctx.store.path;
+  const active = reconcileFlights.get(key);
+  if (active) return active;
+  const flight = runReconcileAllUnresolved(ctx).finally(() => {
+    if (reconcileFlights.get(key) === flight) reconcileFlights.delete(key);
+  });
+  reconcileFlights.set(key, flight);
+  return flight;
 }
 
 /** Un scope (marché) a-t-il encore une empreinte vivante bloquant l'émission ? */
@@ -481,6 +522,18 @@ export async function enforceKillSwitch(
   setGlobalKillSwitch(stateEngaged);
   const engaged = stateEngaged || fileEngaged;
   if (!engaged) {
+    // M30 : le marqueur vaut pour UN engagement continu, pas pour toute la vie
+    // de l'état. Un cycle ayant observé le désengagement réarme la prochaine
+    // transition false→true (fichier retiré puis redéposé, ou état réengagé).
+    const meta = (doc.meta ?? {}) as Record<string, unknown>;
+    if (meta['kill_switch_cancelall_called'] === true) {
+      await store.withLock((doc2) => {
+        const next = { ...((doc2.meta ?? {}) as Record<string, unknown>) };
+        delete next['kill_switch_cancelall_called'];
+        doc2.meta = next;
+        store.write(doc2);
+      });
+    }
     return { engaged: false, cancelAll: 'not_needed', detail: 'kill switch not engaged' };
   }
   const source = stateEngaged && fileEngaged ? 'state+file' : stateEngaged ? 'state' : 'file';

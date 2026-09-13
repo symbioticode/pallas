@@ -218,6 +218,15 @@ export async function runReferenceCycle(
   // état<->ledger ne se déclenche jamais (constat de la campagne M27 : 93/93
   // cycles no_signal, aucune réconciliation).
   const store = new DurableStateStore(opts.statePath);
+  // PALLAS-M30 : surveiller l'autorité externe à CHAQUE cycle. M29 ne
+  // l'évaluait qu'au démarrage : un fichier KILL créé ensuite bloquait les
+  // émissions mais ne déclenchait pas le cancel-all des ordres déjà ouverts.
+  const cycleKillSwitch = await enforceKillSwitch(store, opts.client);
+  await ledger.append({
+    event: 'kill_switch_sync',
+    timestamp: new Date().toISOString(),
+    payload: { ...cycleKillSwitch, cycle },
+  });
   await reconcileStateLedger(store, ledger);
   let reconcileSummary: { results: number; clear: boolean; skipped: boolean } = {
     results: 0,

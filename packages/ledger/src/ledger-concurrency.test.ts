@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -32,6 +32,7 @@ const PROBE = join(PROJECT_ROOT, 'scripts', 'ledger-concurrency-probe.mjs');
  * 30 s, portée inchangée (nombre de processus et d'itérations).
  */
 const PROBE_TIMEOUT_MS = 30_000;
+const PROBE_ENV = { ...process.env, PALLAS_TEST_MODE: '1', PALLAS_LEDGER_MODE: 'dev' };
 
 /**
  * PALLAS-M21 — extraction du verdict JSON d'une probe, avec diagnostic.
@@ -41,8 +42,9 @@ const PROBE_TIMEOUT_MS = 30_000;
  * `Unexpected end of JSON input` opaque. Une sortie vide ou non-JSON échoue
  * désormais en NOMMANT la probe et en exposant stdout/stderr.
  */
-function probeResult(r: { stdout: string; stderr: string }, label: string): { pid: number } {
-  const lines = r.stdout
+function probeResult(r: { stdout: string; stderr: string }, label: string, resultPath: string): { pid: number } {
+  const output = r.stdout.trim() === '' ? readFileSync(resultPath, 'utf8') : r.stdout;
+  const lines = output
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l !== '');
@@ -66,15 +68,17 @@ describe("PALLAS-M16 — concurrence interprocessus (perte d'entrée = échec)",
   it('2 processus × 5 itérations ⇒ exactement 10 entrées, chaîne valide', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'pallas-ledger-cc-'));
     const ledgerPath = join(dir, 'ledger.json');
+    const result1 = join(dir, 'probe-1.json');
+    const result2 = join(dir, 'probe-2.json');
     const iterations = 5;
 
     const nodeBin = process.execPath;
     const [p1, p2] = await Promise.all([
-      execFileAsync(nodeBin, [PROBE, ledgerPath, String(iterations)], { cwd: PROJECT_ROOT }),
-      execFileAsync(nodeBin, [PROBE, ledgerPath, String(iterations)], { cwd: PROJECT_ROOT }),
+      execFileAsync(nodeBin, [PROBE, ledgerPath, String(iterations), result1], { cwd: PROJECT_ROOT, env: PROBE_ENV }),
+      execFileAsync(nodeBin, [PROBE, ledgerPath, String(iterations), result2], { cwd: PROJECT_ROOT, env: PROBE_ENV }),
     ]);
-    const out1 = probeResult(p1, 'M16/2proc#1');
-    const out2 = probeResult(p2, 'M16/2proc#2');
+    const out1 = probeResult(p1, 'M16/2proc#1', result1);
+    const out2 = probeResult(p2, 'M16/2proc#2', result2);
     expect(out1.pid).not.toBe(out2.pid); // vraiment DEUX processus distincts
 
     const ledger = FileLedger.load(ledgerPath);
@@ -90,7 +94,7 @@ describe("PALLAS-M16 — concurrence interprocessus (perte d'entrée = échec)",
 
     const runs = await Promise.all(
       [0, 1, 2, 3].map(() =>
-        execFileAsync(nodeBin, [PROBE, ledgerPath, String(iterations)], { cwd: PROJECT_ROOT }),
+        execFileAsync(nodeBin, [PROBE, ledgerPath, String(iterations)], { cwd: PROJECT_ROOT, env: PROBE_ENV }),
       ),
     );
     // PALLAS-M24 : en mode dev, FileLedger.load emet un avertissement BRUYANT

@@ -12,8 +12,9 @@
  */
 
 import { FileLedger } from '@pallas/ledger';
+import { writeFileSync } from 'node:fs';
 
-const [, , ledgerPath, iterationsRaw] = process.argv;
+const [, , ledgerPath, iterationsRaw, resultPath] = process.argv;
 if (!ledgerPath || !iterationsRaw) {
   console.error('usage: node scripts/ledger-concurrency-probe.mjs <ledgerPath> <iterations>');
   process.exit(2);
@@ -32,4 +33,6 @@ for (let i = 0; i < iterations; i += 1) {
   n = ledger.length;
 }
 
-console.log(JSON.stringify({ pid: process.pid, iterations, entries_after_my_turn: n }));
+const result = JSON.stringify({ pid: process.pid, iterations, entries_after_my_turn: n });
+if (resultPath) writeFileSync(resultPath, result + '\n', 'utf8');
+console.log(result);
