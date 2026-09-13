@@ -22,7 +22,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { PolymarketClient, ReadOrder, ReadTrade } from '@pallas/execution';
+import { isKillSwitchFileEngaged, type PolymarketClient, type ReadOrder, type ReadTrade } from '@pallas/execution';
 import { setGlobalKillSwitch } from '@pallas/execution/kill-switch-authority';
 
 import { newLifecycle, transitionLifecycle, type DurableStateStore, type OrderLifecycle } from './durable-state.js';
@@ -375,6 +375,27 @@ export async function reconcileScopeForMarket(
   return { results, clear: remaining.length === 0 };
 }
 
+/**
+ * PALLAS-M29/R-01 — réconcilie TOUS les ordres locaux non réglés, QUEL QUE SOIT
+ * leur marché. `reconcileScopeForMarket` ne traite que le marché du signal
+ * courant : un marché SILENCIEUX (aucun signal) pouvait donc porter un ordre
+ * AMBIGUOUS/SUBMITTING indéfiniment, et le rattrapage état↔ledger ne tournait
+ * jamais. Cette variante est destinée à être appelée à CHAQUE cycle, y compris
+ * `no_signal`.
+ */
+export async function reconcileAllUnresolved(
+  ctx: ReconcileContext,
+): Promise<{ results: ReconciliationResult[]; clear: boolean }> {
+  const unresolved = ctx.store.read().orders.filter((o) => isUnresolved(o));
+  const results: ReconciliationResult[] = [];
+  for (const order of unresolved) {
+    const res = await reconcileOrder(ctx, order.correlationId);
+    if (res) results.push(res);
+  }
+  const remaining = ctx.store.read().orders.filter((o) => isUnresolved(o));
+  return { results, clear: remaining.length === 0 };
+}
+
 /** Un scope (marché) a-t-il encore une empreinte vivante bloquant l'émission ? */
 export function scopeHasLiveFootprint(store: DurableStateStore, marketId: string): boolean {
   const doc = store.read();
@@ -451,14 +472,21 @@ export async function enforceKillSwitch(
   client: PolymarketClient,
 ): Promise<{ engaged: boolean; cancelAll: 'not_needed' | 'called' | 'dry_run_blocked' | 'error'; detail: string }> {
   const doc = store.read();
-  const engaged = doc.risk.kill_switch_engaged;
-  setGlobalKillSwitch(engaged);
+  const stateEngaged = doc.risk.kill_switch_engaged;
+  // PALLAS-M29/R-02 : le fichier-drapeau externe (M25) est une autorité
+  // d'ENGAGEMENT à part entière — il doit DÉCLENCHER le cancel-all, pas
+  // seulement bloquer les nouvelles émissions. On combine donc les deux
+  // vérités (état durable OU fichier présent).
+  const fileEngaged = isKillSwitchFileEngaged();
+  setGlobalKillSwitch(stateEngaged);
+  const engaged = stateEngaged || fileEngaged;
   if (!engaged) {
-    return { engaged, cancelAll: 'not_needed', detail: 'kill switch not engaged' };
+    return { engaged: false, cancelAll: 'not_needed', detail: 'kill switch not engaged' };
   }
+  const source = stateEngaged && fileEngaged ? 'state+file' : stateEngaged ? 'state' : 'file';
   const meta = (doc.meta ?? {}) as Record<string, unknown>;
   if (meta['kill_switch_cancelall_called'] === true) {
-    return { engaged, cancelAll: 'not_needed', detail: 'cancel-all already issued for this engagement' };
+    return { engaged, cancelAll: 'not_needed', detail: `cancel-all already issued for this engagement (source: ${source})` };
   }
   try {
     const res = await client.cancelAllOrders();
@@ -468,7 +496,7 @@ export async function enforceKillSwitch(
       doc2.meta = { ...m, kill_switch_cancelall_called: true };
       store.write(doc2);
     });
-    return { engaged, cancelAll: called ? 'called' : 'dry_run_blocked', detail: 'cancel-all issued at emission gate' };
+    return { engaged, cancelAll: called ? 'called' : 'dry_run_blocked', detail: `cancel-all issued at emission gate (source: ${source})` };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isDry = message.includes('blocked in dry-run');

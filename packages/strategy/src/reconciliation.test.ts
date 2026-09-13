@@ -561,6 +561,40 @@ describe('réconciliation — scope & tour de garde', () => {
     // PAS ré-émettre doublon.
     expect(scopeHasLiveFootprint(store, TOKEN)).toBe(true);
   });
+  test("M29/R-01 — un cycle no_signal réconcilie QUAND MÊME un ordre AMBIGUOUS d'un AUTRE marché", async () => {
+    const { store, dir } = setupStore();
+    const ambiguous = transitionLifecycle(
+      newLifecycle({ market_id: TOKEN, side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1 }),
+      { status: 'AMBIGUOUS', outcome: 'pending_reconciliation' },
+    );
+    await pushOrder(store, ambiguous);
+    const OTHER = '9999999999999999999999999999999999999999999999999999999999999999';
+    // La stratégie interroge OTHER (sans carnet => aucun signal) ; l'ordre ambigu
+    // vit sur TOKEN et n'a AUCUNE raison d'être traité par un cycle à signal.
+    const fetcher = async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/book')) {
+        return new Response(JSON.stringify({ bids: [], asks: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (url.includes('/data/trades')) {
+        return new Response(JSON.stringify({ data: [openTrade({ asset_id: TOKEN, size: '1' })] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (url.includes('/data/orders')) {
+        return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('{}', { status: 404 });
+    };
+    const client = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    const opts = cycleOpts(store, dir, client)({
+      strategy: new ReferenceStrategy({ tokenIds: [OTHER], buyThreshold: 0.6, size: 1 }),
+    });
+
+    const result = await runReferenceCycle(1, opts);
+    expect(result.signal).toBeNull(); // vraiment no_signal
+    const o = store.read().orders[0];
+    expect(o.status).toBe('TERMINAL'); // réconcilié malgré l'absence de signal
+    expect(o.terminal_reason).toBe('filled');
+  });
 });
 
 describe('réconciliation au démarrage', () => {
@@ -620,6 +654,30 @@ describe('enforceKillSwitch — une seule sortie, idempotente', () => {
     expect(cancels).toBe(1);
     const meta = (store.read().meta ?? {}) as Record<string, unknown>;
     expect(meta.kill_switch_cancelall_called).toBe(true);
+  });
+  test('M29/R-02 — le fichier-drapeau SEUL (état durable à false) déclenche un cancelAllOrders RÉEL', async () => {
+    const { store } = setupStore();
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-m29-kill-'));
+    const flag = join(dir, 'KILL');
+    const saved = process.env.PALLAS_KILL_SWITCH_FILE;
+    process.env.PALLAS_KILL_SWITCH_FILE = flag;
+    try {
+      writeFileSync(flag, 'stop', 'utf8');
+      const client = liveClient({});
+      let cancels = 0;
+      vi.spyOn(client, 'cancelAllOrders').mockImplementation(async () => {
+        cancels += 1;
+        return { cancelled: true, dryRun: false };
+      });
+      const res = await enforceKillSwitch(store, client);
+      expect(res.engaged).toBe(true);
+      expect(cancels).toBe(1); // cancel-all RÉEL déclenché par le seul fichier
+      expect(store.read().risk.kill_switch_engaged).toBe(false); // l'état n'est pas inventé
+    } finally {
+      setGlobalKillSwitch(false);
+      if (saved === undefined) delete process.env.PALLAS_KILL_SWITCH_FILE;
+      else process.env.PALLAS_KILL_SWITCH_FILE = saved;
+    }
   });
 
   test('dry-run : cancel-all bloqué par le dry-run (jamais marqué comme fait)', async () => {

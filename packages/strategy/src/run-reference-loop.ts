@@ -52,8 +52,9 @@ import {
 import {
   enforceKillSwitch,
   isLiveFootprint,
+  reconcileAllUnresolved,
+  reconcileAtStartup,
   reconcileOrder,
-  reconcileScopeForMarket,
   type ReconcileContext,
 } from './reconciliation.js';
 
@@ -210,6 +211,47 @@ export async function runReferenceCycle(
     payload: threatSummary ?? { source: 'none', threats: 0, modified: false },
   });
 
+  // --- étape 2.4 (PALLAS-M23/M29) : rattrapage + réconciliation AVANT le signal ---
+  // PALLAS-M29/R-01 : cette étape ne dépend PLUS de la présence d'un signal.
+  // Elle tourne à CHAQUE cycle, y compris `no_signal` — sinon un marché
+  // silencieux peut porter un AMBIGUOUS indéfiniment, et le rattrapage
+  // état<->ledger ne se déclenche jamais (constat de la campagne M27 : 93/93
+  // cycles no_signal, aucune réconciliation).
+  const store = new DurableStateStore(opts.statePath);
+  await reconcileStateLedger(store, ledger);
+  let reconcileSummary: { results: number; clear: boolean; skipped: boolean } = {
+    results: 0,
+    clear: true,
+    skipped: true,
+  };
+  if (opts.signer) {
+    const ctx: ReconcileContext = { store, client: opts.client, maker: opts.signer.address };
+    try {
+      const all = await reconcileAllUnresolved(ctx);
+      reconcileSummary = { results: all.results.length, clear: all.clear, skipped: false };
+    } catch (err) {
+      reconcileSummary = { ...reconcileSummary, skipped: false, clear: false };
+      // PALLAS-M20 : une réconciliation qui échoue est une anomalie opérationnelle
+      // à alerter (stock AMBIGUOUS non réglé → scope bloqué). Dédupliqué en mémoire.
+      emitAnomaly('RECONCILE_FAILED', 'reconcile all unresolved failed', {
+        error: err instanceof Error ? err.message.slice(0, 300) : String(err),
+      });
+      await ledger.append({
+        event: 'reconcile_scope_error',
+        timestamp: new Date().toISOString(),
+        payload: {
+          scope: 'all_unresolved',
+          error: err instanceof Error ? err.message.slice(0, 300) : String(err),
+        },
+      });
+    }
+  }
+  await ledger.append({
+    event: 'reconcile_scope',
+    timestamp: new Date().toISOString(),
+    payload: { scope: 'all_unresolved', ...reconcileSummary },
+  });
+
   // --- étape 1 : signal de la stratégie de référence ---
   const indicatorStart = Date.now();
   const signal = await opts.strategy.evaluate(opts.client);
@@ -225,51 +267,6 @@ export async function runReferenceCycle(
   }
 
   const trade = buildReferenceTradeRequest(signal, indicatorMs);
-  const store = new DurableStateStore(opts.statePath);
-  // PALLAS-M23 : rattrapage état<->ledger AVANT toute décision. Un crash
-  // entre la transition ACKED durable et son entrée ledger (fenêtre D) laisse
-  // un ordre reconnu sans trace d'audit ; on répare ici, de façon idempotente.
-  await reconcileStateLedger(store, ledger);
-
-  // --- étape 2.5 (PALLAS-M14) : réconciliation du scope AVANT la décision ---
-  // Si l'échange dispose d'identifiants L2 (maker), on interroge la réalité
-  // AVANT de statuer : tout AMBIGUOUS/SUBMITTING/SUBMMITTED du marché est
-  // convergé vers son sort réel. Échec réseau ⇒ on laisse le gate de scope
-  // (en dessous) faire barrage : jamais d'émission sur un marché non réglé.
-  let reconcileSummary: { results: number; clear: boolean; skipped: boolean } = {
-    results: 0,
-    clear: true,
-    skipped: true,
-  };
-  if (opts.signer) {
-    const ctx: ReconcileContext = { store, client: opts.client, maker: opts.signer.address };
-    try {
-      const scope = await reconcileScopeForMarket(ctx, trade.market_id);
-      reconcileSummary = { results: scope.results.length, clear: scope.clear, skipped: false };
-    } catch (err) {
-      reconcileSummary = { ...reconcileSummary, skipped: false, clear: false };
-      // PALLAS-M20 : une réconciliation qui échoue est une anomalie opérationnelle
-      // à alerter (stock AMBIGUOUS non réglé → scope bloqué). Dédupliqué en mémoire.
-      emitAnomaly('RECONCILE_FAILED', 'reconcile scope failed', {
-        market_id: trade.market_id,
-        error: err instanceof Error ? err.message.slice(0, 300) : String(err),
-      });
-      await ledger.append({
-        event: 'reconcile_scope_error',
-        timestamp: new Date().toISOString(),
-        payload: {
-          market_id: trade.market_id,
-          error: err instanceof Error ? err.message.slice(0, 300) : String(err),
-        },
-      });
-    }
-  }
-
-  await ledger.append({
-    event: 'reconcile_scope',
-    timestamp: new Date().toISOString(),
-    payload: { market_id: trade.market_id, ...reconcileSummary },
-  });
   // --- étape 3 : risk engine + écriture DURABLE de la décision (DECIDED) ---
   // Lecture + validation + persist DECIDED sous UN SEUL verrou : personne ne
   // peut écrire entre notre lecture d'état et l'enregistrement de la décision.
@@ -737,8 +734,34 @@ async function main(): Promise<void> {
     });
   }
 
-  console.log(
-    JSON.stringify({
+  // PALLAS-M29/R-01 : réconciliation AU DÉMARRAGE — ordres non réglés + ordres
+  // ouverts externes — quand un maker L2 est disponible. `reconcileAtStartup`
+  // n'était auparavant référencé que par son test (code mort).
+  if (signer) {
+    try {
+      const startup = await reconcileAtStartup({ store, client, maker: signer.address });
+      await ledger.append({
+        event: 'reconcile_startup',
+        timestamp: new Date().toISOString(),
+        payload: {
+          results: startup.results.length,
+          external_orders: startup.externalOrders,
+          open_orders: startup.openOrders.length,
+        },
+      });
+    } catch (err) {
+      emitAnomaly('RECONCILE_FAILED', 'reconcile at startup failed', {
+        error: err instanceof Error ? err.message.slice(0, 300) : String(err),
+      });
+      await ledger.append({
+        event: 'reconcile_startup_error',
+        timestamp: new Date().toISOString(),
+        payload: { error: err instanceof Error ? err.message.slice(0, 300) : String(err) },
+      });
+    }
+  }
+
+  console.log(    JSON.stringify({
       event: 'run_start',
       cycles,
       token_ids: tokenIds,
