@@ -145,11 +145,30 @@ export function freshState(meta?: Record<string, unknown>): DurableStateDoc {
 }
 
 /**
- * Exposition réelle (USD) calculée depuis les ordres du document (PALLAS-M15,
- * P0-02 / F-04). Un ordre vaut sa valeur déclarée tant qu'il n'est PAS un
- * terminal annulé/rejeté : positions (TERMINAL-filled) et ordres ouverts
+ * Exposition (USD) alimentée par l'état RÉCONCILIÉ avec l'exchange (PALLAS-M15,
+ * P0-02 / F-04 ; renforcée PALLAS-M22).
+ *
+ * Un ordre vaut sa valeur déclarée tant qu'il n'est PAS un terminal
+ * annulé/rejeté : positions (TERMINAL-filled) et ordres ouverts
  * (DECIDED/SUBMITTING/RECONCILING/SUBMITTED/AMBIGUOUS/ACKED) comptent.
  * Agrégée par marché — l'ordre des lignes est l'ordre d'apparition.
+ *
+ * PALLAS-M22 : la source de vérité des états est désormais la PREUVE
+ * POSITIVE de l'exchange (trades/fills via `/data/trades`, ordres ouverts
+ * confirmés). Une position totalement remplie est reconnue `filled` et compte
+ * ici, au lieu d'être faussement annulée et retirée de l'exposition.
+ *
+ * LIMITES RÉSIDUELLES, explicitement assumées (audit v0.4 F-04) — à ne pas
+ * présenter comme une exposition « complète »/« réelle » au sens fort :
+ *  - il n'existe pas d'endpoint CLOB renvoyant une POSITION consolidée par
+ *    marché ; `/balance-allowance` donne le solde et les allowances par token,
+ *    pas un notionnel USD par marché — la conversion exigerait un modèle de
+ *    prix/comptabilité hors périmètre M22 ;
+ *  - pour un ordre non ENCORE réconcilié, l'exposition reste dérivée de la
+ *    machine d'états locale ;
+ *  - le schéma ne porte pas de quantité remplie : un remplissage PARTIEL reste
+ *    `ACKED` (vivant) et compte pour son notionnel PLEIN — sur-évaluation
+ *    volontairement conservatrice (jamais de sous-évaluation d'une position).
  */
 export function exposureFromOrders(orders: OrderLifecycle[]): ExposureItem[] {
   const perMarket = new Map<string, number>();

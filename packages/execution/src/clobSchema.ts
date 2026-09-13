@@ -141,6 +141,53 @@ export const OpenOrdersResponseSchema = z
   })
   .passthrough();
 
+/**
+ * Un TRADE (fill) tel que renvoyé par `GET /data/trades` (PALLAS-M22).
+ *
+ * Forme de référence VÉRIFIÉE sur l'OpenAPI CLOB officiel
+ * (`/api-spec/clob-openapi.yaml`, schéma `Trade`) le 2026-09-12 :
+ * `{ id, taker_order_id, market, asset_id, side (BUY/SELL), size, price,
+ * fee_rate_bps, status (TRADE_STATUS_CONFIRMED|...), match_time, last_update,
+ * outcome, bucket_index, owner, maker_address, transaction_hash, trader_side,
+ * maker_orders }`.
+ *
+ * C'est la PREUVE POSITIVE d'exécution exigée après soumission (audit v0.4
+ * F-03/F-04) : un ordre TOTALEMENT rempli disparaît des ordres ouverts, seul
+ * l'historique des trades permet alors de le distinguer d'un ordre annulé.
+ *
+ * Seul `asset_id` est requis (identité de l'actif, indispensable au matching) ;
+ * les autres champs restent `.optional()` — jamais de valeur inventée si le
+ * serveur les omet.
+ */
+export const TradeSchema = z
+  .object({
+    id: z.string().optional(),
+    taker_order_id: z.string().optional(),
+    market: z.string().optional(),
+    asset_id: z.string().min(1),
+    side: z.string().optional(),
+    size: DecimalSchema.optional(),
+    price: DecimalSchema.optional(),
+    status: z.string().optional(),
+    match_time: DecimalSchema.optional(),
+    last_update: DecimalSchema.optional(),
+    outcome: z.string().optional(),
+    maker_address: z.string().optional(),
+    trader_side: z.string().optional(),
+    transaction_hash: z.string().optional(),
+  })
+  .passthrough();
+
+/** Enveloppe de `GET /data/trades` (paginée : limit/count/data + curseur). */
+export const TradesResponseSchema = z
+  .object({
+    limit: z.number().optional(),
+    next_cursor: z.string().optional(),
+    count: z.number().optional(),
+    data: z.array(TradeSchema),
+  })
+  .passthrough();
+
 /** Reponse de `DELETE /cancel-all` : `{ success: bool, errorMsg? }`. */
 export const CancelAllResponseSchema = z
   .object({

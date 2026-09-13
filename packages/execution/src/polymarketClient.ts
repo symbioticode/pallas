@@ -16,6 +16,8 @@ import {
   OpenOrdersResponseSchema,
   OrderbookSchema,
   PlaceOrderResponseSchema,
+  TradeSchema,
+  TradesResponseSchema,
 } from './clobSchema.js';
 
 export {
@@ -107,6 +109,25 @@ export interface ReadOrder {
   originalSize: number | null;
   status: string | null;
   maker: string | null;
+}
+
+/**
+ * Un TRADE (fill) tel que lu par `getTrades` (PALLAS-M22). C'est la preuve
+ * POSITIVE d'exécution : un ordre totalement rempli quitte les ordres ouverts,
+ * donc seule la lecture des trades permet de le distinguer d'un ordre annulé.
+ */
+export interface ReadTrade {
+  id: string | null;
+  takerOrderId: string | null;
+  assetId: string;
+  market: string | null;
+  side: 'BUY' | 'SELL' | null;
+  price: number | null;
+  size: number | null;
+  status: string | null;
+  /** Horodatage Unix (secondes) du match, tel que fourni par l'exchange. */
+  matchTime: number | null;
+  makerAddress: string | null;
 }
 
 /**
@@ -510,6 +531,62 @@ export class PolymarketClient {
     }
     const data = parseClob(ClobOrderSchema, 'getOrder', await res.json().catch(() => null));
     return this.toReadOrder(data);
+  }
+
+  /**
+   * Lit l'HISTORIQUE DES TRADES/FILLS d'un maker (`GET /data/trades`).
+   *
+   * PALLAS-M22 (audit v0.4 F-03/F-04) : c'est la source de preuve POSITIVE qui
+   * manquait. Un ordre totalement rempli n'apparaît plus dans `/data/orders`
+   * (qui ne renvoie que les ordres vivants) : sans cette lecture, une absence
+   * d'ordre ouvert était conclue à tort « annulé ». Lecture authentifiée L2,
+   * autorisée en dry-run (aucun effet de bord).
+   *
+   * `after`/`before` sont des timestamps Unix en SECONDES ; `maker_address`
+   * est exigé par l'API.
+   */
+  async getTrades(
+    maker: string,
+    opts: { assetId?: string; market?: string; after?: number; before?: number; nextCursor?: string } = {},
+  ): Promise<ReadTrade[]> {
+    const creds = this.requireAuth('getTrades');
+    const query = new URLSearchParams({ maker_address: maker });
+    if (opts.assetId) query.set('asset_id', opts.assetId);
+    if (opts.market) query.set('market', opts.market);
+    if (opts.after != null) query.set('after', String(opts.after));
+    if (opts.before != null) query.set('before', String(opts.before));
+    if (opts.nextCursor) query.set('next_cursor', opts.nextCursor);
+    const path = `/data/trades?${query}`;
+    const headers = await buildL2Headers(creds, 'GET', path);
+    const res = await this.fetcher(`${this.baseUrl}${path}`, {
+      method: 'GET',
+      headers: { accept: 'application/json', ...headers },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Polymarket getTrades HTTP ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const data = parseClob(TradesResponseSchema, 'getTrades', await res.json().catch(() => null));
+    return data.data.map((t) => this.toReadTrade(t));
+  }
+
+  private toReadTrade(raw: z.infer<typeof TradeSchema>): ReadTrade {
+    const side = String(raw.side ?? '').toUpperCase();
+    const num = (v: unknown): number | null =>
+      typeof v === 'number' ? v : typeof v === 'string' && v !== '' ? Number(v) : null;
+    return {
+      id: raw.id ?? null,
+      takerOrderId: raw.taker_order_id ?? null,
+      assetId: raw.asset_id,
+      market: raw.market ?? null,
+      side: side === 'BUY' || side === 'SELL' ? side : null,
+      price: num(raw.price),
+      size: num(raw.size),
+      status: raw.status ?? null,
+      matchTime: num(raw.match_time),
+      makerAddress: raw.maker_address ?? null,
+    };
   }
 
   private toReadOrder(raw: z.infer<typeof ClobOrderSchema>): ReadOrder {

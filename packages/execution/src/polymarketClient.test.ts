@@ -626,6 +626,73 @@ describe('PALLAS-M14 — lectures ordres (getOpenOrders / getOrder)', () => {
       status: 'filled',
     });
   });
+
+  it('PALLAS-M22 — getTrades GET /data/trades (maker_address, asset_id, after) et mappe vers ReadTrade', async () => {
+    const fetcher = vi.fn(async (_i: string | URL | Request, _init?: RequestInit) =>
+      jsonResponse({
+        limit: 100,
+        next_cursor: 'LTE=',
+        count: 1,
+        data: [
+          {
+            id: 'trade-1',
+            taker_order_id: '0x' + 'a'.repeat(40),
+            market: '0x' + '1'.repeat(64),
+            asset_id: 'tok-yes',
+            side: 'BUY',
+            size: '2.5',
+            price: '0.50',
+            status: 'TRADE_STATUS_CONFIRMED',
+            match_time: '1700000000',
+            outcome: 'YES',
+            maker_address: ADDR.toLowerCase(),
+            trader_side: 'MAKER',
+          },
+        ],
+      })
+    );
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    const trades = await c.getTrades(ADDR, { assetId: 'tok-yes', after: 1699999000 });
+
+    const [url, init] = fetcher.mock.calls[0];
+    const path = `/data/trades?maker_address=${encodeURIComponent(ADDR)}&asset_id=tok-yes&after=1699999000`;
+    expect(url).toBe(`https://fake.api${path}`);
+    expect(init!.method).toBe('GET');
+    const headers = init!.headers as Record<string, string>;
+    expect(headers['POLY_SIGNATURE']).toBe(recomputeL2(CREDS.secret, headers['POLY_TIMESTAMP'], 'GET', path));
+
+    expect(trades).toHaveLength(1);
+    expect(trades[0]).toEqual({
+      id: 'trade-1',
+      takerOrderId: '0x' + 'a'.repeat(40),
+      assetId: 'tok-yes',
+      market: '0x' + '1'.repeat(64),
+      side: 'BUY',
+      price: 0.5,
+      size: 2.5,
+      status: 'TRADE_STATUS_CONFIRMED',
+      matchTime: 1700000000,
+      makerAddress: ADDR.toLowerCase(),
+    });
+  });
+
+  it('PALLAS-M22 — getTrades reste une lecture autorisée en dry-run (aucun effet de bord)', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ data: [] }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => true });
+    expect(await c.getTrades(ADDR)).toEqual([]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('PALLAS-M22 — getTrades refuse sans credentials en live (lecture authentifiée)', async () => {
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher: vi.fn(), isDryRun: () => false });
+    await expect(c.getTrades(ADDR)).rejects.toThrow(/credentials API requises/);
+  });
+
+  it('PALLAS-M22 — getTrades rejette une réponse sans data[] (fail-closed)', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ trades: [] }));
+    const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+    await expect(c.getTrades(ADDR)).rejects.toBeInstanceOf(ClobValidationError);
+  });
 });
 
 describe('PALLAS-M14 — cancelAllOrders (primitive de sortie du kill switch)', () => {

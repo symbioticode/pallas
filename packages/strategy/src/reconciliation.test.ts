@@ -28,6 +28,7 @@ import { ReferenceStrategy } from './reference.js';
 import { runReferenceCycle } from './run-reference-loop.js';
 import {
   DurableStateStore,
+  exposureFromOrders,
   newLifecycle,
   transitionLifecycle,
   type OrderLifecycle,
@@ -82,6 +83,8 @@ function fakeRiskBinary(stdout: string): string {
 function liveClient(routes: {
   openOrders?: Array<Record<string, unknown>>;
   order?: Record<string, unknown> | ((id: string) => Record<string, unknown>);
+  /** PALLAS-M22 : historique de trades/fills (preuve positive d'exécution). */
+  trades?: Array<Record<string, unknown>>;
   /** Si fourni, le POST /order répond avec ce statut (simule un AmbiguousOrderError). */
   placeOrderStatus?: number;
 }): PolymarketClient {
@@ -92,6 +95,12 @@ function liveClient(routes: {
         return new Response('gateway timeout', { status: routes.placeOrderStatus });
       }
       return new Response(JSON.stringify({ orderID: 'order-placed-1', status: 'open' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (url.includes('/data/trades')) {
+      return new Response(JSON.stringify({ data: routes.trades ?? [] }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -138,6 +147,32 @@ const openClobOrder = (over: Record<string, unknown> = {}): Record<string, unkno
   status: 'open',
   ...over,
 });
+
+/** PALLAS-M22 — un TRADE (fill) tel que renvoyé par `GET /data/trades`. */
+const openTrade = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id: 'trade-1',
+  taker_order_id: '0x' + 'a'.repeat(40),
+  market: '0x' + '1'.repeat(64),
+  asset_id: TOKEN,
+  side: 'BUY',
+  size: '1',
+  price: '0.50',
+  status: 'TRADE_STATUS_CONFIRMED',
+  match_time: String(Math.floor(Date.now() / 1000)),
+  outcome: 'YES',
+  maker_address: ADDR.toLowerCase(),
+  trader_side: 'MAKER',
+  ...over,
+});
+
+/**
+ * PALLAS-M22 — recule `created_at`. La conclusion « annulé par absence »
+ * n'est autorisée qu'après une fenêtre d'observation écoulée
+ * (`MIN_ABSENT_CANCEL_AGE_MS`) : on ne conclut jamais trop tôt.
+ */
+function aged(o: OrderLifecycle, ageMs = 5 * 60_000): OrderLifecycle {
+  return { ...o, created_at: new Date(Date.now() - ageMs).toISOString() };
+}
 
 function setupStore(): { store: DurableStateStore; dir: string } {
   const dir = mkdtempSync(join(tmpdir(), 'pallas-recon-'));
@@ -204,14 +239,16 @@ describe('réconciliation — convergence d\'UN ordre', () => {
     expect(sawPreNetwork).toBe(true); // l'état était RECONCILING quand le scan est parti
   });
 
-  test('AMBIGUOUS introuvable dans les ordres ouverts => TERMINAL cancelled / not_found_on_exchange', async () => {
+  test('AMBIGUOUS absent des DEUX sources (ordres ouverts ET trades) après fenêtre => TERMINAL cancelled / not_found_on_exchange', async () => {
     const { store } = setupStore();
     const ambiguous = transitionLifecycle(
       newLifecycle({ market_id: TOKEN, side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1 }),
       { status: 'AMBIGUOUS', outcome: 'pending_reconciliation' },
     );
-    await pushOrder(store, ambiguous);
-    const client = liveClient({ openOrders: [] });
+    // PALLAS-M22 : l'absence ne conclut qu'après une fenêtre d'observation
+    // écoulée (sinon l'ordre resterait RECONCILING, cf. test dédié plus bas).
+    await pushOrder(store, aged(ambiguous));
+    const client = liveClient({ openOrders: [], trades: [] });
 
     const res = await reconcileOrder({ store, client, maker: ADDR }, ambiguous.correlationId);
     expect(res?.convergence).toBe('TERMINAL');
@@ -289,6 +326,144 @@ describe('réconciliation — convergence d\'UN ordre', () => {
     expect(o.status).toBe('RECONCILING'); // pas d'ACK fabriqué, pas de TERMINAL forcé
     expect(scopeHasLiveFootprint(store, TOKEN)).toBe(true); // le scope reste barré
   });
+
+  // ---------------------------------------------------------------------------
+  // PALLAS-M22 — réconciliation par fills réels (audit v0.4 F-03/F-04)
+  // ---------------------------------------------------------------------------
+
+  test("scénario AUDIT v0.4 : ordre totalement REMPLI, absent des ordres ouverts, sans order_id => filled par preuve de trade, jamais cancelled", async () => {
+    const { store } = setupStore();
+    const ambiguous = transitionLifecycle(
+      newLifecycle({ market_id: TOKEN, side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1 }),
+      { status: 'AMBIGUOUS', outcome: 'pending_reconciliation' },
+    );
+    await pushOrder(store, ambiguous);
+    // L'ordre a disparu des ordres ouverts parce qu'il est TOTALEMENT REMPLI
+    // (c'est le bug historique : absence d'ordre ouvert => faux « cancelled »).
+    // L'historique des trades porte la preuve POSITIVE de l'exécution.
+    const client = liveClient({ openOrders: [], trades: [openTrade({ size: '1' })] });
+
+    const res = await reconcileOrder({ store, client, maker: ADDR }, ambiguous.correlationId);
+    expect(res?.convergence).toBe('TERMINAL');
+    const o = store.read().orders[0];
+    expect(o.status).toBe('TERMINAL');
+    expect(o.terminal_reason).toBe('filled');
+    expect(o.outcome).toBe('reconciled_filled_by_trade');
+    // Une position réelle n'est plus une « empreinte vivante » : le scope est
+    // libéré parce que l'ordre est RÉGLÉ, pas parce qu'on a supposé son absence.
+    expect(scopeHasLiveFootprint(store, TOKEN)).toBe(false);
+  });
+
+  test("M22 : remplissage PARTIEL => ACKED (reste vivant), ni filled ni cancelled", async () => {
+    const { store } = setupStore();
+    const ambiguous = transitionLifecycle(
+      newLifecycle({ market_id: TOKEN, side: 'buy', price: 0.5, quantity: 2, est_value_usd: 1 }),
+      { status: 'AMBIGUOUS', outcome: 'pending_reconciliation' },
+    );
+    await pushOrder(store, ambiguous);
+    const client = liveClient({ openOrders: [], trades: [openTrade({ size: '1' })] });
+
+    await reconcileOrder({ store, client, maker: ADDR }, ambiguous.correlationId);
+    const o = store.read().orders[0];
+    expect(o.status).toBe('ACKED');
+    expect(o.outcome).toBe('reconciled_partial_fill');
+    // Le solde de l'ordre reste à exécuter : le scope DOIT rester bloqué.
+    expect(scopeHasLiveFootprint(store, TOKEN)).toBe(true);
+  });
+
+  test("M22 : une SEULE source en erreur => aucune conclusion, reste RECONCILING, scope bloqué", async () => {
+    const { store } = setupStore();
+    const ambiguous = transitionLifecycle(
+      newLifecycle({ market_id: TOKEN, side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1 }),
+      { status: 'AMBIGUOUS', outcome: 'pending_reconciliation' },
+    );
+    // Fenêtre écoulée : c'est l'ERREUR réseau (pas l'âge) qui doit interdire la conclusion.
+    await pushOrder(store, aged(ambiguous));
+    const fetcher = async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/data/trades')) return new Response('boom', { status: 500 });
+      if (url.includes('/data/orders')) {
+        return new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 404 });
+    };
+    const client = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+
+    const res = await reconcileOrder({ store, client, maker: ADDR }, ambiguous.correlationId);
+    expect(res?.convergence).toBe('UNCHANGED');
+    const o = store.read().orders[0];
+    expect(o.status).toBe('RECONCILING');
+    expect(o.terminal_reason).toBeUndefined();
+    expect(scopeHasLiveFootprint(store, TOKEN)).toBe(true);
+  });
+
+  test("M22 : fenêtre trop courte (ordre récent, les deux sources vides) => RECONCILING, pas de cancelled prématuré", async () => {
+    const { store } = setupStore();
+    const ambiguous = transitionLifecycle(
+      newLifecycle({ market_id: TOKEN, side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1 }),
+      { status: 'AMBIGUOUS', outcome: 'pending_reconciliation' },
+    );
+    await pushOrder(store, ambiguous); // created_at = maintenant
+    const client = liveClient({ openOrders: [], trades: [] });
+
+    const res = await reconcileOrder({ store, client, maker: ADDR }, ambiguous.correlationId);
+    expect(res?.convergence).toBe('UNCHANGED');
+    expect(store.read().orders[0].status).toBe('RECONCILING');
+    expect(scopeHasLiveFootprint(store, TOKEN)).toBe(true);
+  });
+
+  test("M22 : jamais soumis avec succès, absent des DEUX sources après fenêtre => cancelled (seule condition légitime)", async () => {
+    const { store } = setupStore();
+    const ambiguous = transitionLifecycle(
+      newLifecycle({ market_id: TOKEN, side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1 }),
+      { status: 'AMBIGUOUS', outcome: 'pending_reconciliation' },
+    );
+    await pushOrder(store, aged(ambiguous));
+    const client = liveClient({ openOrders: [], trades: [] });
+
+    const res = await reconcileOrder({ store, client, maker: ADDR }, ambiguous.correlationId);
+    expect(res?.convergence).toBe('TERMINAL');
+    const o = store.read().orders[0];
+    expect(o.status).toBe('TERMINAL');
+    expect(o.terminal_reason).toBe('cancelled');
+    expect(o.outcome).toBe('not_found_on_exchange');
+  });
+
+  test("M22 : order_id connu mais getOrder 404, fill présent dans les trades => filled (preuve positive)", async () => {
+    const { store } = setupStore();
+    const submitted = transitionLifecycle(
+      newLifecycle({ market_id: TOKEN, side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1 }),
+      { status: 'SUBMITTED', order_id: 'order-ghost' },
+    );
+    await pushOrder(store, submitted);
+    const client = liveClient({ order: undefined as never, openOrders: [], trades: [openTrade({ size: '1' })] });
+
+    const res = await reconcileOrder({ store, client, maker: ADDR }, submitted.correlationId);
+    expect(res?.convergence).toBe('TERMINAL');
+    const o = store.read().orders[0];
+    expect(o.terminal_reason).toBe('filled');
+    expect(o.order_id).toBe('order-ghost'); // l'id local reste tracé
+  });
+
+  test("M22 : une position reconnue 'filled' par les trades COMPTE dans l'exposition (plus jamais effacée par un faux cancelled)", async () => {
+    const { store } = setupStore();
+    const ambiguous = transitionLifecycle(
+      newLifecycle({ market_id: TOKEN, side: 'buy', price: 0.5, quantity: 1, est_value_usd: 7 }),
+      { status: 'AMBIGUOUS', outcome: 'pending_reconciliation' },
+    );
+    await pushOrder(store, ambiguous);
+    const client = liveClient({ openOrders: [], trades: [openTrade({ size: '1' })] });
+
+    await reconcileOrder({ store, client, maker: ADDR }, ambiguous.correlationId);
+    // Avant M22, l'absence d'ordre ouvert aurait conclu « cancelled », et
+    // exposureFromOrders (qui ignore les terminaux annulés) aurait RETIRÉ
+    // cette position : sous-évaluation exactement au pire moment. Désormais
+    // la preuve de fill alimente l'exposition.
+    expect(exposureFromOrders(store.read().orders)).toEqual([{ market_id: TOKEN, size_usd: 7 }]);
+  });
 });
 
 describe('réconciliation — scope & tour de garde', () => {
@@ -343,7 +518,8 @@ describe('réconciliation — scope & tour de garde', () => {
       newLifecycle({ market_id: TOKEN, side: 'buy', price: 0.5, quantity: 1, est_value_usd: 1 }),
       { status: 'AMBIGUOUS', outcome: 'pending_reconciliation' },
     );
-    await pushOrder(store, ghost);
+    // PALLAS-M22 : absence confirmée par les deux sources ET fenêtre écoulée.
+    await pushOrder(store, aged(ghost));
     // L'exchange ne connaît PAS cet ordre : il est convergé TERMINAL, le scope
     // est libre, le cycle peut alors valider et tenter d'émettre (dry-run stricte).
     const client = liveClient({ openOrders: [] });

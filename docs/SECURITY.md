@@ -35,6 +35,7 @@ limites sont documentées ci-dessous et dans les rapports de mission `docs/missi
 | CI actions SHA-pinnées + job couverture avec seuils | ✔ | M20 |
 | Alertes CRITICAL structurées (JSONL + webhook) sur les anomalies de l'audit | ✔ | M20 |
 | Objectifs RTO ≤ 15 min / RPO ≤ 1 cycle documentés | ✔ | M20 |
+| Réconciliation par fills réels (jamais « cancelled » par simple absence) + exposition alimentée par l'exchange | ✔ (limites documentées) | M22 |
 
 ## Sandbox bwrap (phase 1.3) — portée réelle de la protection
 
@@ -239,6 +240,47 @@ fait l'objet d'une alerte JSONL (`AMBIGUOUS_ORDER`, `RECONCILE_FAILED`, `KILL_SW
 Ces objectifs ne sont **pas** garantis par contrat de service : pas de réplication, pas de
 rene-match. Ce sont des cibles de conception vérifiables par les tests (corruption → fail-stop →
 alerte) et le runbook, pas des SLIs contraignants.
+
+## Réconciliation par fills réels et exposition (PALLAS-M22)
+
+Le finding le plus grave de l'audit v0.4 (F-03/F-04) : sans `order_id` connu, la réconciliation
+n'interrogeait que les ordres OUVERTS. Or un ordre TOTALEMENT REMPLI disparaît précisément de cette
+liste — il était donc conclu « annulé », le gate de scope (M14) se libérait, et Pallas pouvait
+doubler une position déjà prise. La lecture des seuls ordres ouverts est structurellement
+insuffisante, comme le documente Polymarket (réconcilier ordres ouverts **et** trades résultants).
+
+### Correctif : la preuve positive prime, l'absence ne conclut plus seule
+
+GET /data/trades (CLOB, auth L2, `maker_address` requis ; endpoint vérifié sur l'OpenAPI
+officiel `/api-spec/clob-openapi.yaml`, schéma `Trade`) fournit l'historique des fills.
+La convergence de `reconcileOrder` a désormais TROIS issues :
+
+| Preuve | Conclusion |
+|---|---|
+| Ordre ouvert chez l'exchange (scan `/data/orders`) | `ACKED` — empreinte vivante, scope bloqué |
+| Fill(s) totalisant la quantité (`/data/trades`) | `TERMINAL/filled` — position réelle, comptée dans l'exposition |
+| Fill(s) partiels (< quantité) | `ACKED` — reste vivant, scope bloqué (jamais `filled`, jamais `cancelled`) |
+| Absent des ordres ouverts ET des trades, **les deux sources ayant répondu** | `TERMINAL/cancelled` — seule condition légitime |
+| Une source en erreur, ou fenêtre d'observation trop courte (< 60 s) | **reste `RECONCILING`**, le scope reste bloqué |
+
+Aucun chemin de code ne conclut plus `cancelled` sur la seule absence d'un signal. Un `order_id`
+que l'exchange déclare explicitement inconnu (HTTP 404 sur `/data/order/{id}`) est une preuve
+positive d'inexistence et autorise la conclusion immédiate ; l'absence sur un id JAMAIS connu exige
+que la fenêtre d'observation soit écoulée (constante `MIN_ABSENT_CANCEL_AGE_MS` = 60 s). Jamais de
+timeout qui libérerait le scope faute de conclusion.
+
+### Exposition — alimentée par l'exchange, limites assumées
+
+`exposureFromOrders` compte les positions `filled` reconnues par les trades et les ordres
+ouverts confirmés par l'exchange. **Limites résiduelles, non dissimulées** :
+- il n'existe PAS d'endpoint CLOB renvoyant une position consolidée par marché ; `/balance-allowance`
+  donne solde/allowances par token, pas un notionnel USD par marché ;
+- pour un ordre non encore réconcilié, l'exposition reste dérivée de la machine d'états locale ;
+- le schéma ne porte pas de quantité remplie : un remplissage partiel compte pour son notionnel
+  plein (sur-évaluation conservatrice, jamais de sous-évaluation).
+
+Ces limites interdisent de qualifier l'exposition de « réelle » ou « complète » : elle est
+« alimentée par l'exchange dans la mesure des endpoints disponibles ».
 
 ## Chaîne d'audits — traçabilité (PALLAS-M21)
 
