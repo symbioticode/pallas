@@ -7,7 +7,8 @@
   "test_evidence": {
     "npm": { "passed": 304, "failed": 0, "skipped": 4, "total": 308 },
     "cargo": { "passed": 65, "failed": 0 },
-    "clippy": "passed"
+    "clippy": "passed",
+    "environment_note": "Valeurs historiques de M30 : les 4 tests d'isolation bwrap etaient indisponibles sur cet hote. Le rejeu du gel sur un hote avec netns donne 308 passed, 0 failed, 0 skipped ; voir docs/AUDIT-PALLAS-v0.6.md."
   },
   "artifacts": {
     "scripts/m27-72h-run.mjs": "c3f606a0b7f9bef0edb065e697e108a6dfeb25ea3422577764f6914996c8e7aa",
