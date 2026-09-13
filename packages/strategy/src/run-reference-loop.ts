@@ -226,6 +226,10 @@ export async function runReferenceCycle(
 
   const trade = buildReferenceTradeRequest(signal, indicatorMs);
   const store = new DurableStateStore(opts.statePath);
+  // PALLAS-M23 : rattrapage état<->ledger AVANT toute décision. Un crash
+  // entre la transition ACKED durable et son entrée ledger (fenêtre D) laisse
+  // un ordre reconnu sans trace d'audit ; on répare ici, de façon idempotente.
+  await reconcileStateLedger(store, ledger);
 
   // --- étape 2.5 (PALLAS-M14) : réconciliation du scope AVANT la décision ---
   // Si l'échange dispose d'identifiants L2 (maker), on interroge la réalité
@@ -385,6 +389,54 @@ export async function runReferenceCycle(
     execution,
     ledgerRecords: ledger.length,
   };
+}
+
+/**
+ * PALLAS-M23 — réconciliation de démarrage ÉTAT <-> LEDGER (audit v0.4 F-01).
+ *
+ * L'état (snapshot checksummé) et le ledger (chaîne append-only) sont DEUX
+ * fichiers distincts, écrits séparément : un crash entre la transition durable
+ * ACKED et `ledger.append('execution_success')` laisse un ordre réel et
+ * reconnu SANS trace d'audit (fenêtre D). Ce rattrapage détecte les ordres ACKED
+ * dont le `correlation_id` n'apparaît dans AUCUNE entrée
+ * `execution_success` et émet une entrée de réparation — IDEMPOTENTE :
+ * une entrée déjà présente n'est jamais dupliquée.
+ *
+ * Fenêtre résiduelle assumée (documentée) : entre le crash et le prochain
+ * démarrage, le ledger ne porte pas encore la trace. L'état, lui, n'est jamais
+ * faux (il a été écrit DURABLEMENT avant l'appel réseau), et aucune ré-émission
+ * n'est possible sur ce correlationId (empreinte ACKED -> gate de scope M14).
+ */
+export async function reconcileStateLedger(
+  store: DurableStateStore,
+  ledger: FileLedger,
+): Promise<{ repaired: number; checked: number }> {
+  const doc = store.read();
+  const acknowledged = doc.orders.filter((o) => o.status === 'ACKED' && o.order_id != null);
+  if (acknowledged.length === 0) return { repaired: 0, checked: 0 };
+  const traced = new Set(
+    ledger.entries
+      .filter((e) => e.event === 'execution_success')
+      .map((e) => (e.payload as { correlation_id?: string } | undefined)?.correlation_id)
+      .filter((id): id is string => typeof id === 'string'),
+  );
+  let repaired = 0;
+  for (const order of acknowledged) {
+    if (traced.has(order.correlationId)) continue;
+    await ledger.append({
+      event: 'execution_success',
+      timestamp: new Date().toISOString(),
+      payload: {
+        recovered_at_restart: true,
+        orderId: order.order_id,
+        correlation_id: order.correlationId,
+        outcome: order.outcome ?? 'acked',
+        note: 'PALLAS-M23 — rattrapage: etat ACKED sans entree ledger (crash fenetre D)',
+      },
+    });
+    repaired += 1;
+  }
+  return { repaired, checked: acknowledged.length };
 }
 
 /** Statut courant du lifecycle (lecture fraîche du disque, fail-stop). */

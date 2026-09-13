@@ -36,6 +36,7 @@ limites sont documentées ci-dessous et dans les rapports de mission `docs/missi
 | Alertes CRITICAL structurées (JSONL + webhook) sur les anomalies de l'audit | ✔ | M20 |
 | Objectifs RTO ≤ 15 min / RPO ≤ 1 cycle documentés | ✔ | M20 |
 | Réconciliation par fills réels (jamais « cancelled » par simple absence) + exposition alimentée par l'exchange | ✔ (limites documentées) | M22 |
+| Verrou interprocessus à propriétaire (PID + vivacité) + rattrapage état↔ledger au démarrage | ✔ (limites documentées) | M23 |
 
 ## Sandbox bwrap (phase 1.3) — portée réelle de la protection
 
@@ -240,6 +241,37 @@ fait l'objet d'une alerte JSONL (`AMBIGUOUS_ORDER`, `RECONCILE_FAILED`, `KILL_SW
 Ces objectifs ne sont **pas** garantis par contrat de service : pas de réplication, pas de
 rene-match. Ce sont des cibles de conception vérifiables par les tests (corruption → fail-stop →
 alerte) et le runbook, pas des SLIs contraignants.
+
+## Transaction état+ledger et verrou à propriétaire (PALLAS-M23)
+
+### Choix d'architecture : deux fichiers séparés + rattrapage idempotent
+
+L'état (snapshot checksummé, `DurableStateStore`) et le ledger (chaîne append-only
+signée, `FileLedger`) restent DEUX fichiers. Ce choix est acté : formats et lecteurs
+différents (état = dernier connu, ledger = historique immuable ; l'Observatory lit le ledger sans
+charger l'état). Plutôt qu'une fusion risquée ou un outbox complet (bump de version d'état), la
+cohérence est obtenue par une **réconciliation de démarrage** : `reconcileStateLedger(store, ledger)`
+détecte tout ordre `ACKED` dont le `correlation_id` n'apparaît dans aucune entrée
+`execution_success`, et émet une entrée de rattrapage. L'opération est IDEMPOTENTE (une entrée
+déjà présente n'est jamais dupliquée) et tourne avant toute décision de cycle.
+
+**Fenêtre résiduelle assumée** : entre le crash et le prochain démarrage, le ledger ne porte pas
+encore la trace — mais l'état n'est jamais faux (écrit DURABLEMENT avant l'appel réseau, PALLAS-M13)
+et aucune ré-émission n'est possible sur ce `correlationId` (empreinte ACKED → gate de scope
+M14). Cette fenêtre est bornée par le redémarrage, pas par un timeout.
+
+### Verrou : propriétaire + vérification de vivacité
+
+`packages/core/src/file-lock.ts` écrit un `owner.json` (pid, hostname, sessionId,`
+startedAt`) à l'acquisition et, avant toute reprise après `staleMs`, vérifie que le
+détenteur est RÉELLEMENT MORT (signal 0). Un détenteur vivant mais LENT (validation ou E/S longue)
+ne peut donc plus se faire voler son verrou sur le seul âge du répertoire : il attend, ou la
+tentative échoue proprement (`FileLockError`), sans double writer.
+
+**Limites assumées** : la vivacité par PID n'a de sens que sur le même hôte (verrou LOCAL — un
+déploiement multi-hôte retomberait sur le seul critère d'âge) ; la reprise `unlink+rmdir` n'est
+pas atomique (fenêtre étroite de course entre repreneurs, à fermer par un bail transactionnel si
+le multi-hôte devient un besoin réel). Ces limites sont nommées, pas dissimulées.
 
 ## Réconciliation par fills réels et exposition (PALLAS-M22)
 
