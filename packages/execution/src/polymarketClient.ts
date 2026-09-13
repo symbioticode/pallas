@@ -254,6 +254,15 @@ export class PolymarketClient {
           `En production, le mode live est pilote uniquement par disableDryRun('LIVE') (PALLAS-M17)`,
       );
     }
+    // PALLAS-M25 (audit v0.4 F-06) : MEME verrou que isDryRun. L'injection de
+    // l'autorite de kill switch est reservee aux tests ; en production, elle est
+    // lue depuis l'etat durable et/ou le fichier-drapeau externe (killSwitch.ts).
+    if (config.isKillSwitchEngaged !== undefined && process.env.PALLAS_TEST_MODE !== '1') {
+      throw new Error(
+        `isKillSwitchEngaged: injection reservee aux tests — definir PALLAS_TEST_MODE=1 pour l'activer. ` +
+          `En production, l'autorite est lue depuis l'etat durable et le fichier externe (PALLAS-M25)`,
+      );
+    }
     this.baseUrl = config.baseUrl ?? 'https://clob.polymarket.com';
     this.fetcher = config.fetcher ?? fetch;
     this.isDryRunFn = config.isDryRun ?? getIsDryRun;

@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./kill-switch-authority": {
+      "types": "./dist/killSwitchAuthority.d.ts",
+      "import": "./dist/killSwitchAuthority.js"
     }
   },
   "scripts": {

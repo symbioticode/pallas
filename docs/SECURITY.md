@@ -38,6 +38,7 @@ limites sont documentées ci-dessous et dans les rapports de mission `docs/missi
 | Réconciliation par fills réels (jamais « cancelled » par simple absence) + exposition alimentée par l'exchange | ✔ (limites documentées) | M22 |
 | Verrou interprocessus à propriétaire (PID + vivacité) + rattrapage état↔ledger au démarrage | ✔ (limites documentées) | M23 |
 | Ledger signé OBLIGATOIRE par défaut (mode supervised) ; dev explicite et bruyant | ✔ | M24 |
+| Kill switch hors API publique + autorité externe (fichier) + injection restreinte | ✔ | M25 |
 
 ## Sandbox bwrap (phase 1.3) — portée réelle de la protection
 
@@ -242,6 +243,40 @@ fait l'objet d'une alerte JSONL (`AMBIGUOUS_ORDER`, `RECONCILE_FAILED`, `KILL_SW
 Ces objectifs ne sont **pas** garantis par contrat de service : pas de réplication, pas de
 rene-match. Ce sont des cibles de conception vérifiables par les tests (corruption → fail-stop →
 alerte) et le runbook, pas des SLIs contraignants.
+
+## Kill switch : hors surface publique et autorité indépendante du process (PALLAS-M25)
+
+Réserve répétée de l'audit v0.4 (F-06) : `setGlobalKillSwitch` était **publiquement exporté** par
+`@pallas/execution` (n'importe quel code du même process pouvait désengager la dernière ligne de
+défense), et l'injection `isKillSwitchEngaged` du client n'était **pas restreinte** contrairement à
+`isDryRun`.
+
+### Ce qui change
+
+1. **Plus d'export public du désengagement.** L'entrée `@pallas/execution` n'expose que la LECTURE
+   (`getGlobalKillSwitch`, `isKillSwitchFileEngaged`, `killSwitchFilePath`) et l'erreur
+   `KillSwitchEngagedError`. `setGlobalKillSwitch` n'est accessible que par le sous-chemin
+   **RÉSERVÉ et documenté** `@pallas/execution/kill-switch-authority`, utilisé par le seul
+   orchestrateur propriétaire de l'état durable. La carte `exports` du paquet bloque tout autre
+   chemin profond (pas de ré-export indirect atteignable).
+2. **Injection restreinte comme `isDryRun`.** Fournir `isKillSwitchEngaged` hors
+   `PALLAS_TEST_MODE=1` lève une erreur au constructeur — un chemin de production standard ne peut
+   plus fixer l'autorité de kill switch par injection.
+3. **Autorité EXTERNE au process.** La PRÉSENCE du fichier-drapeau
+   `<PALLAS_KILL_SWITCH_FILE | .pallas/KILL>` engage le kill switch, vérifiée à chaque appel de
+   `getGlobalKillSwitch`. Un désengagement en mémoire (`setGlobalKillSwitch(false)`) n'annule PAS
+   un fichier présent : l'opérateur peut arrêter l'émission sans code, et un composant interne ne
+   peut pas « effacer » l'arrêt par un simple appel de fonction.
+
+### Décision : pas de service séparé
+
+Un service de kill switch hors process (RPC dédié, autorité distante) n'est pas implémenté à ce
+stade : le fichier-drapeau ferme déjà la propriété centrale (« aucun code du même process ne peut
+désengager silencieusement ») sans nouvelle infrastructure. **Limite résiduelle nommée** : un
+attaquant ayant déjà l'exécution de code ET l'écriture disque peut supprimer le fichier — mais il
+peut alors aussi tuer le process, modifier le ledger ou les clés ; le service séparé ne relèverait
+que d'un modèle de menace post-compromission. Un service dédié reste une piste si le multi-hôte
+devient un besoin réel.
 
 ## Ledger signé obligatoire par défaut — mode supervised vs dev (PALLAS-M24)
 

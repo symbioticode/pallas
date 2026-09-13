@@ -16,12 +16,8 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import {
-  PolymarketClient,
-  AmbiguousOrderError,
-  setGlobalKillSwitch,
-  getGlobalKillSwitch,
-} from '@pallas/execution';
+import { PolymarketClient, AmbiguousOrderError, getGlobalKillSwitch } from '@pallas/execution';
+import { setGlobalKillSwitch } from '@pallas/execution/kill-switch-authority';
 import { FileLedger } from '@pallas/ledger';
 
 import { ReferenceStrategy } from './reference.js';

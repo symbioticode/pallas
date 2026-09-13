@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { createHmac } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PolymarketClient, AmbiguousOrderError, ClobValidationError, OrderMismatchError, SignatureSchemaNotValidatedError, KillSwitchEngagedError } from './polymarketClient.js';
 import {
   __setSignatureSchemaValidatedForTests as setSchemaValidated,
 } from './schemaGate.js';
-import { setGlobalKillSwitch, getGlobalKillSwitch } from './killSwitch.js';
+import { getGlobalKillSwitch, isKillSwitchFileEngaged } from './killSwitch.js';
+import { setGlobalKillSwitch } from './killSwitchAuthority.js';
 import { buildSignedOrderPayload, clobAuthDigest, recoverSignerAddress } from './polymarketSigner.js';
 import type { SignedOrderPayload } from './polymarketSigner.js';
 
@@ -535,6 +539,69 @@ describe('PALLAS-M14 — kill switch au point d\'émission', () => {
       .rejects.toBeInstanceOf(KillSwitchEngagedError);
     expect(getGlobalKillSwitch()).toBe(false); // il refusait MAIS sans toucher au global
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+describe('PALLAS-M25 — kill switch hors surface publique + autorité externe', () => {
+  it('setGlobalKillSwitch n est PAS exporté par l entrée publique @pallas/execution', async () => {
+    const pub = await import('./index.js');
+    expect('setGlobalKillSwitch' in pub).toBe(false);
+    expect('getGlobalKillSwitch' in pub).toBe(true); // la LECTURE reste publique
+    // le sous-chemin RÉSERVÉ, lui, l'expose (orchestrateur uniquement).
+    const authority = await import('./killSwitchAuthority.js');
+    expect(typeof authority.setGlobalKillSwitch).toBe('function');
+  });
+
+  it('isKillSwitchEngaged est REFUSÉ hors PALLAS_TEST_MODE (symétrique à isDryRun)', () => {
+    const saved = process.env.PALLAS_TEST_MODE;
+    delete process.env.PALLAS_TEST_MODE;
+    try {
+      expect(
+        () => new PolymarketClient({ fetcher: vi.fn(), isKillSwitchEngaged: () => true }),
+      ).toThrow(/reservee aux tests/);
+    } finally {
+      if (saved !== undefined) process.env.PALLAS_TEST_MODE = saved;
+    }
+  });
+
+  it('isKillSwitchEngaged est autorisé quand PALLAS_TEST_MODE=1 (injection test-only)', () => {
+    process.env.PALLAS_TEST_MODE = '1';
+    expect(
+      () => new PolymarketClient({ fetcher: vi.fn(), isKillSwitchEngaged: () => true }),
+    ).not.toThrow();
+  });
+
+  it('le fichier-drapeau EXTERNE engage le kill switch et ne peut pas être désengagé en mémoire', async () => {
+    setSchemaValidated(true);
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-kill-'));
+    const flag = join(dir, 'KILL');
+    const saved = process.env.PALLAS_KILL_SWITCH_FILE;
+    process.env.PALLAS_KILL_SWITCH_FILE = flag;
+    setGlobalKillSwitch(false);
+    try {
+      expect(isKillSwitchFileEngaged()).toBe(false);
+      expect(getGlobalKillSwitch()).toBe(false);
+      writeFileSync(flag, 'stop', 'utf8');
+      expect(isKillSwitchFileEngaged()).toBe(true);
+      expect(getGlobalKillSwitch()).toBe(true);
+      // Un désengagement MÉMOIRE ne l'annule PAS : le fichier reste autoritaire.
+      setGlobalKillSwitch(false);
+      expect(getGlobalKillSwitch()).toBe(true);
+      // Le point d'émission refuse, AUCUN POST.
+      const fetcher = vi.fn();
+      const c = new PolymarketClient({ baseUrl: 'https://fake.api', fetcher, auth: CREDS, isDryRun: () => false });
+      await expect(
+        c.placeOrder({ marketId: '12345', price: 0.5, size: 10, side: 'BUY', tokenId: '12345' }, signedBuy(12n)),
+      ).rejects.toBeInstanceOf(KillSwitchEngagedError);
+      expect(fetcher).not.toHaveBeenCalled();
+      rmSync(flag, { force: true });
+      expect(getGlobalKillSwitch()).toBe(false); // retirer le fichier libère l'émission
+    } finally {
+      setSchemaValidated(false);
+      setGlobalKillSwitch(false);
+      if (saved === undefined) delete process.env.PALLAS_KILL_SWITCH_FILE;
+      else process.env.PALLAS_KILL_SWITCH_FILE = saved;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

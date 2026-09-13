@@ -23,7 +23,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { PolymarketClient, ReadOrder, ReadTrade } from '@pallas/execution';
-import { setGlobalKillSwitch } from '@pallas/execution';
+import { setGlobalKillSwitch } from '@pallas/execution/kill-switch-authority';
 
 import { newLifecycle, transitionLifecycle, type DurableStateStore, type OrderLifecycle } from './durable-state.js';
 
