@@ -18,12 +18,15 @@ son propre hash, construction impossible par définition.
 - squelette documentaire MVP ;
 - journal M31 et provenance M30.
 
-## Résultats attendus avant pose du tag
+## Candidat et résultats observés avant pose du tag
 
-- TypeScript : 304 passés, 0 échec, 4 ignorés ;
+- commit candidat fonctionnel et documentaire : `09e2eed85819961b98fdbf5cc09b40eebafea7f4` ;
+- TypeScript : 308 passés, 0 échec, 0 ignoré ; les quatre tests d'isolation disponibles dans cet
+  environnement ont été exécutés, contrairement au rejeu M30 à 304/0/4 ;
 - Rust : 65 passés, 0 échec ;
 - Clippy : vert avec avertissements traités comme erreurs ;
 - test pins : positif accepté, altération d'un octet rejetée ;
 - `verify-test.sh` : positif accepté et signature altérée rejetée.
 
-Ces chiffres ne deviennent une preuve de gel qu'après rejeu sur le commit ciblé et création du tag.
+Le commit de clôture documentaire est testé une seconde fois avant création du tag. Le tag et son
+message annoté constituent l'identité exacte et la preuve finale du gel.

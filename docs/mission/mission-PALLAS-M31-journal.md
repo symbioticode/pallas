@@ -31,7 +31,17 @@ ne rend aucune décision de préparation opérationnelle ; cette décision relè
 Référence : tag annoté `pallas-mvp-freeze-1`. Son message contient le commit exact et les preuves
 dynamiques finales, afin d'éviter une auto-référence impossible dans le commit lui-même.
 
-## Validation dynamique finale
+## Validation dynamique du candidat `09e2eed85819961b98fdbf5cc09b40eebafea7f4`
 
-À compléter après commit candidat : sorties TypeScript, Rust, Clippy, pins et VERIFY, puis pose du
-tag exclusivement si tout est vert.
+- `npm test` : **308 passés, 0 échec, 0 ignoré**, 26 fichiers passés. Les quatre tests sandbox
+  ignorés dans M30 ont pu s'exécuter ici ; le résultat observé remplace donc honnêtement le chiffre
+  attendu 304/0/4 pour ce rejeu.
+- `cargo test --all-targets` : **65 passés, 0 échec, 0 ignoré** (47 unitaires, 15 CLI,
+  3 propriétés).
+- `cargo clippy --all-targets --all-features -- -D warnings` : **vert** dans le shell Nix épinglé.
+- pins : **8/8 PASS** ; fixture avec un octet ajouté à
+  `packages/execution/dist/dryRun.js` : **REJECTED** explicitement.
+- `verify-test.sh` complet : fixture ledger valide **PASS**, signature altérée **REJECTED**.
+
+Après cette mise à jour documentaire, les mêmes validations sont rejouées sur le commit de clôture.
+Le tag n'est posé que si elles restent toutes vertes ; son annotation enregistre le hash exact.
