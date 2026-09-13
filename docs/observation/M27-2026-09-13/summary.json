@@ -1,0 +1,31 @@
+{
+  "event": "campaign_summary",
+  "ended_at": "2026-09-13T01:41:04.929Z",
+  "reason": "duration_reached",
+  "achieved_ms": 720713,
+  "target_ms": 720000,
+  "restarts": 1,
+  "incidents": [
+    {
+      "type": "sigkill",
+      "at": "2026-09-13T01:33:54.501Z",
+      "pid": 1581037
+    }
+  ],
+  "max_rss_kb": 92256,
+  "final": {
+    "ts": "2026-09-13T01:41:04.929Z",
+    "elapsed_ms": 720713,
+    "alive": true,
+    "pid": 1582732,
+    "rss_kb": 92256,
+    "ledger_entries": 283,
+    "ledger_bytes": 101118,
+    "state_bytes": 0,
+    "alerts_lines": 0,
+    "alerts_bytes": 0,
+    "restarts": 1
+  },
+  "metrics_path": "/home/andrei/Projects/80_PALLAS/pallas/.pallas/campaign-M27-demo/metrics.jsonl",
+  "dir": "/home/andrei/Projects/80_PALLAS/pallas/.pallas/campaign-M27-demo"
+}

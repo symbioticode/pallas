@@ -626,6 +626,9 @@ async function main(): Promise<void> {
     return;
   }
   const cycles = Math.max(1, Number(process.env.PALLAS_REF_CYCLES ?? '3') || 3);
+  // PALLAS-M27 : pause entre cycles pour une campagne d'observation longue
+  // (sans marteler l'API). 0 = comportement d'origine.
+  const cycleSleepMs = Math.max(0, Number(process.env.PALLAS_REF_CYCLE_SLEEP_MS ?? '0') || 0);
   const threshold = Number(process.env.PALLAS_REF_THRESHOLD ?? '0.6');
   const size = Number(process.env.PALLAS_REF_SIZE ?? '1');
   // PALLAS-M15 : la configuration de risque est OPERATEUR, jamais portée par un
@@ -759,6 +762,7 @@ async function main(): Promise<void> {
       externalText,
     });
     console.log(JSON.stringify(result));
+    if (cycleSleepMs > 0) await new Promise((r) => setTimeout(r, cycleSleepMs));
   }
 
   const diskLedger = FileLedger.load(ledgerPath, { publicKeyPem: ledgerPublicKey });
