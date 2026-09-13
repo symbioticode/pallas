@@ -95,6 +95,9 @@ if (existsSync(ledgerPath)) {
 }
 
 log({ event: 'campaign_dir', dir, ledger: ledgerPath });
+mkdirSync('.pallas', { recursive: true });
+writeFileSync(join('.pallas', 'm27-72h-run.pid'), String(process.pid) + '\n');
+writeFileSync(join('.pallas', 'm27-72h-current'), dir + '\n');
 
 if (startAt === 'midnight') {
   const waitMs = waitUntilMidnight();
