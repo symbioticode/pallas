@@ -40,6 +40,7 @@ limites sont documentées ci-dessous et dans les rapports de mission `docs/missi
 | Ledger signé OBLIGATOIRE par défaut (mode supervised) ; dev explicite et bruyant | ✔ | M24 |
 | Kill switch hors API publique + autorité externe (fichier) + injection restreinte | ✔ | M25 |
 | STATE_CORRUPT/LEDGER_CORRUPT émis au point de détection + alertes webhook avec retry et backlog détectable | ✔ (best-effort assumé) | M26 |
+| Garde de permissions des secrets obligatoire (test de convention) + rotation reproductible versionnée | ✔ (testnet non disponible, documenté) | M28 |
 
 ## Sandbox bwrap (phase 1.3) — portée réelle de la protection
 
@@ -244,6 +245,44 @@ fait l'objet d'une alerte JSONL (`AMBIGUOUS_ORDER`, `RECONCILE_FAILED`, `KILL_SW
 Ces objectifs ne sont **pas** garantis par contrat de service : pas de réplication, pas de
 rene-match. Ce sont des cibles de conception vérifiables par les tests (corruption → fail-stop →
 alerte) et le runbook, pas des SLIs contraignants.
+
+## Custody : garde des secrets obligatoire + rotation reproductible (PALLAS-M28)
+
+### La garde n'est plus optionnelle
+
+`loadPolymarketSecretsFromFile` applique `assertFilePermissions` (0600 ou plus strict) **avant** la
+lecture du vault. Un **test de convention** (`secrets-guard-convention.test.ts`) échoue si un
+nouveau point de chargement de secret contourne la garde :
+- `decryptPolymarketSecrets` et `PALLAS_POLYMARKET_VAULT` ne sont référencés que par
+  `packages/execution/src/polymarketSecrets.ts` (aucun autre fichier de PRODUCTION) ;
+- le chargeur fichier appelle `assertFilePermissions` AVANT `readFile` (ordre vérifié) ;
+- le seul fichier de production référençant `loadPolymarketSecrets` est le module garde.
+
+**Absence explicite** : aucun chemin de production ne charge aujourd'hui de secrets réels
+(l'orchestrateur tourne en dry-run avec un signataire éphémère). Le test ci-dessus échouera dès
+qu'un chemin live sera ajouté s'il ne passe pas par la garde — l'oubli devient impossible à
+merger silencieusement.
+
+### Rotation reproductible, sans secret réel
+
+`scripts/rotate-credentials.mjs` (VERSIONNÉ dans le dépôt) génère des credentials de TEST à la
+volée (`randomBytes`), chiffre un vault v2, effectue la rotation (re-chiffrement avec une NOUVELLE
+passphrase), vérifie que l'ancienne passphrase n'ouvre plus le nouveau vault, applique `0600`, et
+**rapporte sans ambiguïté** si un testnet a réellement été utilisé. Aucune valeur de secret n'est
+imprimée (empreintes SHA-256 tronquées seulement).
+
+### Statut réel vs simulé (honnête)
+
+Aucun **testnet CLOB Polymarket officiel** n'est connu ; la dérivation/révocation réelle n'a donc
+pas été exécutée. Le script rapporte `network.status = "skipped"` — il ne présente JAMAIS une
+simulation locale comme une exécution réelle. Un opérateur disposant d'un accès lance
+`PALLAS_ROTATION_LIVE=1 PALLAS_ROTATION_BASE_URL=... PALLAS_TESTNET_PRIVKEY=... node
+scripts/rotate-credentials.mjs` : la dérivation réelle sera alors exécutée et sa réponse
+rapportée.
+
+**Limites assumées** (inchangées depuis M05/M19) : les secrets déchiffrés vivent en clair dans le
+tas JS (non effaçables) ; pas de KMS ni de séparation de process ; secrets et wallet dans le même
+process. Voir § « séparation signature/dérivation ».
 
 ## Livraison des alertes — garantie réelle (PALLAS-M26)
 
