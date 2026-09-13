@@ -39,6 +39,7 @@ limites sont documentées ci-dessous et dans les rapports de mission `docs/missi
 | Verrou interprocessus à propriétaire (PID + vivacité) + rattrapage état↔ledger au démarrage | ✔ (limites documentées) | M23 |
 | Ledger signé OBLIGATOIRE par défaut (mode supervised) ; dev explicite et bruyant | ✔ | M24 |
 | Kill switch hors API publique + autorité externe (fichier) + injection restreinte | ✔ | M25 |
+| STATE_CORRUPT/LEDGER_CORRUPT émis au point de détection + alertes webhook avec retry et backlog détectable | ✔ (best-effort assumé) | M26 |
 
 ## Sandbox bwrap (phase 1.3) — portée réelle de la protection
 
@@ -243,6 +244,34 @@ fait l'objet d'une alerte JSONL (`AMBIGUOUS_ORDER`, `RECONCILE_FAILED`, `KILL_SW
 Ces objectifs ne sont **pas** garantis par contrat de service : pas de réplication, pas de
 rene-match. Ce sont des cibles de conception vérifiables par les tests (corruption → fail-stop →
 alerte) et le runbook, pas des SLIs contraignants.
+
+## Livraison des alertes — garantie réelle (PALLAS-M26)
+
+### Détection au bon endroit
+
+`STATE_CORRUPT` et `LEDGER_CORRUPT` sont émis au POINT DE DÉTECTION RÉEL — la lecture — et non plus
+seulement au chargement de démarrage :
+- `DurableStateStore.read()` émet `STATE_CORRUPT` avant chaque `throw` fail-stop (JSON invalide,
+  schéma hors contrat, checksum incohérent) ; l'alerte ne dépend donc plus de l'appelant.
+- `FileLedger.readChain()` émet `LEDGER_CORRUPT` pour toute corruption détectée à la lecture
+  (y compris lors d'un `append`, pas seulement au `load` initial).
+
+Les trois autres anomalies étaient déjà correctement câblées : `AMBIGUOUS_ORDER` (catch
+`AmbiguousOrderError`), `RECONCILE_FAILED` (échec de réconciliation de scope / post-ambiguïté),
+`KILL_SWITCH` (à l'engagement effectif).
+
+### Acheminement — ce qui est RÉELLEMENT garanti
+
+| Élément | Garantie |
+|---|---|
+| Persistance locale | la ligne CRITICAL est écrite en JSONL **avant** toute tentative réseau ; c'est la seule garantie forte (durable tant que le disque l'est) |
+| Webhook | **best-effort** avec retry borné (défaut 2 tentatives supplémentaires, backoff exponentiel ; `PALLAS_ALERT_WEBHOOK_RETRIES`, `PALLAS_ALERT_RETRY_BACKOFF_MS`) |
+| Échec final du webhook | une ligne `WARN` `ALERT_DELIVERY_FAILED` est ajoutée au **même** JSONL : un lecteur externe peut détecter un **backlog** d'alertes non acquittées |
+
+**Non garanti, explicitement** : pas d'accusé de réception, pas de queue persistante, pas de
+reprise après redémarrage des livraisons en échec, aucune garantie de livraison distante forte. On
+ne présente pas ce mécanisme comme plus robuste qu'il ne l'est : il est « au moins écrit localement,
+webhook best-effort avec retry borné ».
 
 ## Kill switch : hors surface publique et autorité indépendante du process (PALLAS-M25)
 

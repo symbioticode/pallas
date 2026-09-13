@@ -25,7 +25,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { atomicWriteFileSafe, FileLock, type FileLockOptions } from '@pallas/core';
+import { atomicWriteFileSafe, emitAnomaly, FileLock, type FileLockOptions } from '@pallas/core';
 import { Ledger, type LedgerEntryInput, type LedgerRecord, type VerifyResult } from './ledger.js';
 import {
   isLedgerCheckpoint,
@@ -178,20 +178,32 @@ export class FileLedger {
       throw err;
     }
 
-    let raw: unknown;
+    // PALLAS-M26 — toute corruption détectée À LA LECTURE émet LEDGER_CORRUPT
+    // au point réel (pas seulement au chargement de démarrage).
     try {
-      raw = JSON.parse(rawStr);
-    } catch {
-      throw new LedgerLoadError('JSON invalide ou fichier tronqué');
+      let raw: unknown;
+      try {
+        raw = JSON.parse(rawStr);
+      } catch {
+        throw new LedgerLoadError('JSON invalide ou fichier tronqué');
+      }
+      const ledger = FileLedger.ledgerFromFileDoc(raw);
+      const verdict = ledger.verify();
+      if (!verdict.valid) {
+        throw new LedgerIntegrityError(
+          `rupture de chaîne à l'index ${verdict.brokenAt} (${verdict.reason})`,
+        );
+      }
+      return ledger;
+    } catch (err) {
+      if (err instanceof LedgerLoadError || err instanceof LedgerIntegrityError) {
+        emitAnomaly('LEDGER_CORRUPT', 'ledger corruption detected at read', {
+          path,
+          error: err.message.slice(0, 300),
+        });
+      }
+      throw err;
     }
-    const ledger = FileLedger.ledgerFromFileDoc(raw);
-    const verdict = ledger.verify();
-    if (!verdict.valid) {
-      throw new LedgerIntegrityError(
-        `rupture de chaîne à l'index ${verdict.brokenAt} (${verdict.reason})`,
-      );
-    }
-    return ledger;
   }
 
   /** Construit un Ledger depuis un document fichier, avec structure stricte. */

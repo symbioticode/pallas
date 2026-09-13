@@ -25,7 +25,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { atomicWriteFileSafe, FileLock, type FileLockOptions } from '@pallas/core';
+import { atomicWriteFileSafe, emitAnomaly, FileLock, type FileLockOptions } from '@pallas/core';
 import { StateOutputSchema, type ExposureItem, type StateOutput } from '@pallas/risk';
 import { z } from 'zod';
 
@@ -285,18 +285,32 @@ export class DurableStateStore {
     try {
       raw = JSON.parse(rawStr);
     } catch {
-      throw new StateCorruptionError('fichier présent mais JSON invalide/tronqué');
+      this.corrupt('fichier présent mais JSON invalide/tronqué');
     }
     const parsed = DurableStateDocSchema.safeParse(raw);
     if (!parsed.success) {
-      throw new StateCorruptionError(schemaFailureSummary(parsed.error));
+      this.corrupt(schemaFailureSummary(parsed.error));
     }
     const doc = parsed.data;
     const recomputed = checksumOfState(doc.risk, doc.orders, doc.meta);
     if (doc.checksum !== recomputed) {
-      throw new StateCorruptionError('checksum incohérent avec le contenu (falsification ou corruption)');
+      this.corrupt('checksum incohérent avec le contenu (falsification ou corruption)');
     }
     return doc;
+  }
+
+  /**
+   * PALLAS-M26 — émet l'alerte STATE_CORRUPT au POINT DE DÉTECTION RÉEL (la
+   * lecture), puis lève l'erreur fail-stop. L'alerte ne dépend donc plus de
+   * l'appelant : toute lecture ratée la produit, y compris si l'appelant
+   * avale ou relance l'erreur. La déduplication M20 évite le spam.
+   */
+  private corrupt(reason: string): never {
+    emitAnomaly('STATE_CORRUPT', 'durable state corruption detected at read', {
+      reason: reason.slice(0, 300),
+      path: this.statePath,
+    });
+    throw new StateCorruptionError(reason);
   }
 
   /** Écriture atomique + checksum recalculé. **Doit** être appelée sous verrou.

@@ -677,6 +677,10 @@ async function main(): Promise<void> {
   let store: DurableStateStore;
   try {
     store = new DurableStateStore(statePath);
+    // PALLAS-M26 : la CONSTRUCTION ne lit rien — c'est la LECTURE qui peut
+    // échouer sur corruption. On lit ici pour un fail-stop au démarrage.
+    // `read()` émet lui-même STATE_CORRUPT au point de détection réel.
+    store.read();
   } catch (err) {
     emitAnomaly('STATE_CORRUPT', 'durable state load fail-stop triggered', {
       path: statePath,
@@ -710,11 +714,20 @@ async function main(): Promise<void> {
       payload: { ...record, elapsed_ms: Date.now() - killStart },
     });
   } catch (err) {
+    // PALLAS-M26 : si l'erreur EST une corruption d'état, `store.read()`
+    // relève StateCorruptionError ; cette seconde lecture ne doit ni masquer
+    // l'erreur d'origine ni faire crasher le chemin d'alerte.
+    let engaged: boolean | null = null;
+    try {
+      engaged = store.read().risk.kill_switch_engaged;
+    } catch {
+      engaged = null;
+    }
     await ledger.append({
       event: 'kill_switch_sync',
       timestamp: new Date().toISOString(),
       payload: {
-        engaged: store.read().risk.kill_switch_engaged,
+        engaged,
         error: err instanceof Error ? err.message.slice(0, 300) : String(err),
         elapsed_ms: Date.now() - killStart,
       },
