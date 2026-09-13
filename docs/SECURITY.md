@@ -37,6 +37,7 @@ limites sont documentées ci-dessous et dans les rapports de mission `docs/missi
 | Objectifs RTO ≤ 15 min / RPO ≤ 1 cycle documentés | ✔ | M20 |
 | Réconciliation par fills réels (jamais « cancelled » par simple absence) + exposition alimentée par l'exchange | ✔ (limites documentées) | M22 |
 | Verrou interprocessus à propriétaire (PID + vivacité) + rattrapage état↔ledger au démarrage | ✔ (limites documentées) | M23 |
+| Ledger signé OBLIGATOIRE par défaut (mode supervised) ; dev explicite et bruyant | ✔ | M24 |
 
 ## Sandbox bwrap (phase 1.3) — portée réelle de la protection
 
@@ -241,6 +242,39 @@ fait l'objet d'une alerte JSONL (`AMBIGUOUS_ORDER`, `RECONCILE_FAILED`, `KILL_SW
 Ces objectifs ne sont **pas** garantis par contrat de service : pas de réplication, pas de
 rene-match. Ce sont des cibles de conception vérifiables par les tests (corruption → fail-stop →
 alerte) et le runbook, pas des SLIs contraignants.
+
+## Ledger signé obligatoire par défaut — mode supervised vs dev (PALLAS-M24)
+
+Le finding F-05 de l'audit v0.4 : sans clé publique ni checkpoint, le ledger non signé était
+accepté **silencieusement** — la protection de PALLAS-M16 était une capacité OPTIONNELLE, pas une
+garantie par défaut. Un déploiement qui oubliait la clé publique perdait toute détection de
+falsification sans aucun signal.
+
+FileLedger.load distingue désormais DEUX modes (resolveLedgerMode) :
+
+| Mode | Déclenchement | Comportement |
+|---|---|---|
+| **supervised** (défaut) | aucun marqueur | la clé publique Ed25519 est **obligatoire** ; son absence est **FATALE** au démarrage |
+| **dev** | PALLAS_LEDGER_MODE=dev (ou PALLAS_TEST_MODE=1 en test) | ledger non signé **accepté** mais **avertissement bruyant** (console.warn) ; l'Observatory affiche LEDGER UNSIGNED |
+
+Priorité de résolution : argument explicite mode > PALLAS_LEDGER_MODE > PALLAS_TEST_MODE=1 (tests)
+> défaut supervised. Une valeur de PALLAS_LEDGER_MODE non reconnue **n'est pas devinée** : erreur
+explicite. Le mode dev reste donc utilisable localement, mais il faut le DEMANDER.
+
+### Précision sur ce que chaque contrôle prouve
+
+- **Ancrage** (index/hash de la tête signée toujours présent dans la chaîne) : vérifié quel que
+  soit le mode ET sans clé publique. Il détecte une chaîne tronquée ou réécrite après signature —
+  mais ce n'est **pas** une preuve cryptographique.
+- **Signature Ed25519** : vérifiée UNIQUEMENT quand la clé publique est fournie. C'est la seule
+  preuve cryptographique, et elle est désormais obligatoire en mode supervised.
+
+### Ancrage distant — limite assumée
+
+Aucun ancrage externe au process (publication périodique du hash de tête vers un service tiers ou
+un log syslog/webhook hors machine) n'est implémenté dans PALLAS-M24. Conséquence explicite : un
+attaquant qui contrôle À LA FOIS le ledger ET la clé privée de signature n'est arrêté par rien. La
+limite est nommée, pas dissimulée ; un ancrage distant reste une piste ouverte.
 
 ## Transaction état+ledger et verrou à propriétaire (PALLAS-M23)
 

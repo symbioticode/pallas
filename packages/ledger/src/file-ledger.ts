@@ -65,17 +65,67 @@ export class LedgerLockError extends Error {
   }
 }
 
+/**
+ * PALLAS-M24 — mode du ledger.
+ *  - 'supervised' (run réel : paper trading ou live) : la clé publique Ed25519
+ *    est OBLIGATOIRE ; son absence est FATALE au démarrage. Aucun chemin par
+ *    défaut ne laisse un ledger non signé passer silencieusement.
+ *  - 'dev' : usage local explicitement marqué ; le ledger non signé est accepté
+ *    mais un AVERTISSEMENT BRUYANT est émis (et l'Observatory affiche
+ *    « LEDGER UNSIGNED »). Jamais destiné à un run réel.
+ */
+export type LedgerMode = 'dev' | 'supervised';
+
 export interface FileLedgerOptions {
   /**
    * Clé publique Ed25519 (PEM SPKI) pour vérifier le checkpoint `<ledger>.sig`.
-   * Si fournie, le checkpoint est OBLIGATOIRE et doit se vérifier cryptographiquement ;
-   * sinon le chargement échoue (fail-stop). Si absente, un checkpoint présent est
-   * quand même vérifié (cohérence head_index/head_hash) mais un ledger non signé
-   * reste accepté (tout premier démarrage légitime, mode dev/unsigned).
+   * En mode 'supervised' elle est OBLIGATOIRE (absence = fatal).
+   * En mode 'dev', si elle est fournie, le checkpoint est exigé et vérifié
+   * cryptographiquement ; sinon un checkpoint présent est quand même vérifié
+   * (ancrage head_index/head_hash) et un ledger non signé est accepté.
    */
   publicKeyPem?: string;
+  /**
+   * Mode explicite. Priorité : cet argument > `PALLAS_LEDGER_MODE` > défaut.
+   * Le défaut est 'supervised', SAUF si `PALLAS_TEST_MODE=1` (suite de tests)
+   * qui reste 'dev' pour ne pas complexifier chaque test unitaire.
+   */
+  mode?: LedgerMode;
   /** Options du verrou interprocessus (défauts = ceux de @pallas/core). */
   lock?: FileLockOptions;
+}
+
+/**
+ * Résout le mode du ledger (PALLAS-M24). Un mode explicite gagne ; puis
+ * `PALLAS_LEDGER_MODE=dev|supervised` ; sinon `PALLAS_TEST_MODE=1` => 'dev'
+ * (les tests ne sont pas un run réel) ; sinon 'supervised' (défaut sûr).
+ * Une valeur de `PALLAS_LEDGER_MODE` non reconnue n'est PAS devinée : erreur.
+ */
+export function resolveLedgerMode(explicit?: LedgerMode): LedgerMode {
+  if (explicit === 'dev' || explicit === 'supervised') return explicit;
+  const raw = process.env.PALLAS_LEDGER_MODE;
+  if (raw !== undefined && raw !== '') {
+    const v = raw.toLowerCase();
+    if (v === 'dev' || v === 'supervised') return v;
+    throw new LedgerIntegrityError(
+      `PALLAS_LEDGER_MODE invalide: "${raw}" (attendu: dev | supervised) — refus de deviner`,
+    );
+  }
+  if (process.env.PALLAS_TEST_MODE === '1') return 'dev';
+  return 'supervised';
+}
+
+const warnedUnsigned = new Set<string>();
+function warnUnsignedLedger(ledgerPath: string): void {
+  if (warnedUnsigned.has(ledgerPath)) return;
+  warnedUnsigned.add(ledgerPath);
+  // Avertissement BRUYANT et unique par ledger (évite le spam sur les appels répétés).
+  console.warn(
+    '[PALLAS-M24] ATTENTION — LEDGER NON SIGNE accepte (mode dev). ' +
+      'Aucune protection cryptographique contre la falsification. ' +
+      'Ce mode est INTERDIT pour un run reel (paper trading inclus) : fournir la cle ' +
+      'publique Ed25519 et PALLAS_LEDGER_MODE=supervised. ledger=' + ledgerPath,
+  );
 }
 
 export class FileLedger {
@@ -106,8 +156,9 @@ export class FileLedger {
    */
   static load(path: string, opts: FileLedgerOptions = {}): FileLedger {
     const resolved = resolve(path);
+    const mode = resolveLedgerMode(opts.mode);
     const ledger = FileLedger.readChain(resolved);
-    const isSigned = FileLedger.verifyHeadCheckpoint(resolved, ledger, opts.publicKeyPem);
+    const isSigned = FileLedger.verifyHeadCheckpoint(resolved, ledger, opts.publicKeyPem, mode);
     return new FileLedger(resolved, ledger, isSigned, opts.lock ?? {});
   }
 
@@ -170,20 +221,33 @@ export class FileLedger {
   private static verifyHeadCheckpoint(
     ledgerPath: string,
     ledger: Ledger,
-    publicKeyPem?: string,
+    publicKeyPem: string | undefined,
+    mode: LedgerMode,
   ): boolean {
+    const keyConfigured = publicKeyPem !== undefined && publicKeyPem.trim() !== '';
+
+    // PALLAS-M24 : en mode supervise, PAS de ledger non signe silencieux.
+    if (mode === 'supervised' && !keyConfigured) {
+      throw new LedgerIntegrityError(
+        'mode supervised: aucune cle publique de ledger configuree (publicKeyPem) — ' +
+          'le ledger signe est OBLIGATOIRE hors developpement. Fournir la cle publique, ' +
+          'ou poser PALLAS_LEDGER_MODE=dev pour un usage local explicitement non reel.',
+      );
+    }
+
     const cpPath = ledgerCheckpointPath(ledgerPath);
     const [cpRead, checkpoint] = readCheckpointFile(cpPath);
 
-    if (publicKeyPem !== undefined) {
-      // Mode strict (clé publique configurée) : checkpoint OBLIGATOIRE.
+    if (keyConfigured) {
+      // Clé publique configurée : checkpoint OBLIGATOIRE.
       if (!checkpoint) {
         throw new LedgerIntegrityError(
           'clé publique configurée mais checkpoint .sig absent ou illisible — la chaîne est-elle signée ?',
         );
       }
     } else if (cpRead === 'absent') {
-      // Pas de clé publique, pas de checkpoint : ledger non signé accepté.
+      // Mode dev, ni clé ni checkpoint : accepté mais SIGNALE bruyamment.
+      warnUnsignedLedger(ledgerPath);
       return false;
     } else if (!checkpoint) {
       throw new LedgerIntegrityError('checkpoint .sig présent mais illisible/invalide');
@@ -201,7 +265,7 @@ export class FileLedger {
       );
     }
 
-    if (publicKeyPem !== undefined && !verifyLedgerCheckpoint(publicKeyPem, checkpoint!)) {
+    if (keyConfigured && !verifyLedgerCheckpoint(publicKeyPem!, checkpoint!)) {
       throw new LedgerIntegrityError('signature du checkpoint invalide');
     }
     return true;

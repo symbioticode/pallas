@@ -93,7 +93,13 @@ describe("PALLAS-M16 — concurrence interprocessus (perte d'entrée = échec)",
         execFileAsync(nodeBin, [PROBE, ledgerPath, String(iterations)], { cwd: PROJECT_ROOT }),
       ),
     );
-    runs.forEach((r) => expect(r.stderr).toBe(''));
+    // PALLAS-M24 : en mode dev, FileLedger.load emet un avertissement BRUYANT
+    // (leader non signe) sur stderr — documente et attendu ici. On l'ignore
+    // NOMMEMENT, mais tout autre contenu stderr reste interdit.
+    runs.forEach((r) => {
+      const stderr = r.stderr.replace(/^\[PALLAS-M24\][^\n]*\n?/gm, '');
+      expect(stderr).toBe('');
+    });
 
     const ledger = FileLedger.load(ledgerPath);
     expect(ledger.entries.length).toBe(iterations * 4);
