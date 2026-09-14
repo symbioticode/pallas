@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderDashboard } from './render.js';
-import { buildSnapshot, readAlerts, readDurableState, redactSecrets } from './snapshot.js';
+import { buildSnapshot, readAlerts, readDurableState, redactSecrets, resolveBaseline } from './snapshot.js';
 import { createReadOnlyRouter } from './server.js';
 
 function canonical(value: unknown): string {
@@ -49,11 +50,11 @@ describe('Observatory read-only boundary', () => {
     expect(response.headers?.Allow).toBe('GET');
   });
 
-  it('has exactly three GET surfaces and no mutation route', async () => {
+  it('has exactly two GET surfaces and no mutation route', async () => {
     const route = createReadOnlyRouter({ rootDir: '/nonexistent', fetcher: noNetwork, commit: null });
     expect((await route('GET', '/')).status).toBe(200);
     expect((await route('GET', '/api/snapshot')).status).toBe(200);
-    expect((await route('GET', '/api/status')).status).toBe(200);
+    expect((await route('GET', '/api/status')).status).toBe(404);
     expect((await route('GET', '/orders')).status).toBe(404);
   });
 
@@ -115,7 +116,7 @@ describe('Observatory rendering', () => {
     expect(html).toContain('DEMO OVERRIDE');
     expect(html).toContain('REFERENCE LOOP');
     expect(html).toContain('RUNNING');
-    expect(html).toContain('APP v0.1.0 · AUDIT BASELINE v0.3');
+    expect(html).toContain('APP v0.2.0 · AUDIT BASELINE');
   });
 
   it('renders a real REJECT decision and rejected_by', async () => {
@@ -268,7 +269,7 @@ describe('Observatory — état durable v2 (PALLAS-M13)', () => {
   });
 });
 
-describe('Observatory — alertes PALLAS-M20 (JSONL + /api/status)', () => {
+describe('Observatory — alertes PALLAS-M20', () => {
   function alertLine(anomaly: string, subject: string, ts: string): string {
     return JSON.stringify({
       ts, level: 'CRITICAL', anomaly,
@@ -318,41 +319,66 @@ describe('Observatory — alertes PALLAS-M20 (JSONL + /api/status)', () => {
     expect(html).toContain('RECONCILE_FAILED');
   });
 
-  it('/api/status: expose l état réel (dry-run, kill switch, ordres) et critical=false sans incident', async () => {
-    const dir = pallasFixture({ hist_pnls: [1], kill_switch_engaged: false, circuit_breaker: { state: 'Closed' }, volatility: { window: [], baseline: null } });
-    const route = createReadOnlyRouter({ rootDir: dir, fetcher: noNetwork, commit: null });
-    const res = await route('GET', '/api/status');
-    expect(res.status).toBe(200);
-    const status = JSON.parse(res.body) as Record<string, unknown>;
-    expect(status.mode).toBe('DRY RUN');
-    expect((status.dryRun as Record<string, unknown>).status).toBe('ENABLED');
-    expect((status.killSwitch as Record<string, unknown>).engaged).toBe(false);
-    expect((status.ledger as Record<string, unknown>).status).toMatch(/^(VALID|EMPTY)$/);
-    expect(status.critical).toBe(false);
-    expect(Array.isArray(status.alerts)).toBe(true);
+});
+
+describe('Observatory M33 — baseline, campagne et kill switch read-only', () => {
+  function riskFixture(killSwitchEngaged: boolean): string {
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-kill-'));
+    const pallas = join(dir, '.pallas');
+    mkdirSync(pallas, { recursive: true });
+    writeFileSync(join(pallas, 'ledger.json'), JSON.stringify({ root: 'pallas', entries: [] }));
+    const risk = { hist_pnls: [], kill_switch_engaged: killSwitchEngaged, circuit_breaker: { state: 'Closed' } };
+    const checksum = createHash('sha256').update(canonical({ version: 2, risk, orders: [], meta: undefined })).digest('hex');
+    writeFileSync(join(pallas, 'risk-state.json'), JSON.stringify({ version: 2, checksum, risk, orders: [] }));
+    return dir;
+  }
+
+  it('dérive la baseline de la source de gel et suit un nouveau tag', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-baseline-'));
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    execFileSync('git', ['config', 'user.email', 'fixture@example.invalid'], { cwd: dir });
+    execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: dir });
+    writeFileSync(join(dir, 'tracked'), 'one');
+    execFileSync('git', ['add', 'tracked'], { cwd: dir });
+    execFileSync('git', ['commit', '-qm', 'one'], { cwd: dir });
+    execFileSync('git', ['tag', 'freeze-one'], { cwd: dir });
+    const metadata = join(dir, 'freeze.md');
+    writeFileSync(metadata, 'La référence de gel est le tag annoté `freeze-one`.\n');
+    const first = resolveBaseline(dir, metadata);
+    writeFileSync(join(dir, 'tracked'), 'two');
+    execFileSync('git', ['commit', '-qam', 'two'], { cwd: dir });
+    execFileSync('git', ['tag', 'freeze-two'], { cwd: dir });
+    writeFileSync(metadata, 'La référence de gel est le tag annoté `freeze-two`.\n');
+    const second = resolveBaseline(dir, metadata);
+    expect(first.tag).toBe('freeze-one');
+    expect(second.tag).toBe('freeze-two');
+    expect(second.commit).not.toBe(first.commit);
   });
 
-  it('/api/status: un kill switch engagé + alerte = critical true et reflet incident', async () => {
-    const dir = pallasFixture({ hist_pnls: [1], kill_switch_engaged: true, circuit_breaker: { state: 'Closed' }, volatility: { window: [], baseline: null } });
-    writeFileSync(join(dir, '.pallas', 'alerts.jsonl'), alertLine('KILL_SWITCH', 'global kill switch ENGAGED', '2026-09-11T10:00:00.000Z') + '\n');
-    const route = createReadOnlyRouter({ rootDir: dir, fetcher: noNetwork, commit: null });
-    const res = await route('GET', '/api/status');
-    expect(res.status).toBe(200);
-    const status = JSON.parse(res.body) as Record<string, unknown>;
-    expect((status.alerts as unknown[]).length).toBeGreaterThanOrEqual(1);
-    expect((status.alerts as Array<{ anomaly: string }>)[0].anomaly).toBe('KILL_SWITCH');
-    expect(status.critical).toBe(true);
+  it('affiche une campagne active et retombe sur UNKNOWN si elle est absente', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pallas-campaign-'));
+    const pallas = join(dir, '.pallas');
+    const campaign = join(pallas, 'campaign-fixture');
+    mkdirSync(campaign, { recursive: true });
+    writeFileSync(join(pallas, 'm27-72h-current'), campaign + '\n');
+    writeFileSync(join(campaign, 'manifest.json'), JSON.stringify({ started_at: '2026-09-14T00:00:00Z', target_minutes: 4320 }));
+    writeFileSync(join(campaign, 'checkpoints.jsonl'), JSON.stringify({ index: 1, at: '2026-09-14T06:00:00Z', verified_load: true }) + '\n');
+    writeFileSync(join(pallas, 'ct.json'), JSON.stringify({ state: { ct_id: 'CT-TEST' } }));
+    writeFileSync(join(pallas, 'cost.jsonl'), JSON.stringify({ at: '2026-09-14T06:01:00Z', campaign, reconcile_scopes: 10, getOpenOrders_getTrades_calls: 2 }) + '\n');
+    const active = await buildSnapshot({ rootDir: dir, ledgerPath: join(dir, 'missing'), riskStatePath: join(dir, 'missing-risk'), campaignStatePath: join(pallas, 'ct.json'), networkCostPath: join(pallas, 'cost.jsonl'), fetcher: noNetwork, commit: null, now: () => new Date('2026-09-14T12:00:00Z') });
+    expect(active.campaign).toMatchObject({ status: 'ACTIVE', id: 'CT-TEST', elapsedMinutes: 720, targetMinutes: 4320, checkpointsSigned: 1, lastCheckpoint: 'VERIFIED', networkCallsPerCycle: 0.2 });
+    const absent = await buildSnapshot({ rootDir: mkdtempSync(join(tmpdir(), 'pallas-campaign-')), fetcher: noNetwork, commit: null });
+    expect(absent.campaign.status).toBe('UNKNOWN');
   });
 
-  it('/api/status: un état durable CORRUPT (checksum) est remonté comme warning sans être béni', async () => {
-    const dir = pallasFixture({ hist_pnls: [1], kill_switch_engaged: false, circuit_breaker: { state: 'Closed' }, volatility: { window: [], baseline: null } });
-    const raw = JSON.parse(readFileSync(join(dir, '.pallas', 'risk-state.json'), 'utf8')) as { risk: Record<string, unknown> };
-    (raw.risk as Record<string, unknown>).hist_pnls = [999]; // falsification silencieuse
-    writeFileSync(join(dir, '.pallas', 'risk-state.json'), JSON.stringify(raw));
-    const route = createReadOnlyRouter({ rootDir: dir, fetcher: noNetwork, commit: null });
-    const res = await route('GET', '/api/status');
-    const status = JSON.parse(res.body) as Record<string, unknown>;
-    expect((status.warnings as string[]).some((w) => w.includes('CORRUPT'))).toBe(true);
-    expect(status.critical).toBe(true);
+  it.each([
+    [false, false, false, 'NONE'],
+    [true, false, true, 'DURABLE_STATE'],
+    [false, true, true, 'KILL_FILE'],
+  ] as const)('kill switch durable=%s fichier=%s', async (durable, file, engaged, source) => {
+    const dir = riskFixture(durable);
+    if (file) writeFileSync(join(dir, '.pallas', 'KILL'), 'fixture');
+    const snapshot = await buildSnapshot({ rootDir: dir, fetcher: noNetwork, commit: null });
+    expect(snapshot.killSwitch).toEqual({ engaged, source });
   });
 });

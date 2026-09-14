@@ -48,8 +48,15 @@ du book est optionnelle : si Polymarket ou le réseau est indisponible, le panne
 Le mode automatique affiche la question et l'outcome humains du marché. Son seuil forcé à
 `1` est identifié par le badge `DEMO OVERRIDE` : il sert à exercer le pipeline, pas à suggérer
 un signal significatif. `REFERENCE LOOP` distingue `RUNNING`, `STOPPED`, `STALE` et `UNKNOWN`,
-avec l'âge du dernier événement. `APP v0.1.0`, `AUDIT BASELINE v0.3` et le commit sont affichés
-séparément.
+avec l'âge du dernier événement. `APP v0.2.0`, la baseline dérivée du tag déclaré dans
+`docs/mvp/BASELINE-FREEZE.md`, son commit figé et le commit courant sont affichés séparément.
+
+Le panneau `CAMPAGNE` lit le pointeur `.pallas/m27-72h-current`, le manifeste et les checkpoints
+de la campagne, ainsi que l'instantané CT déjà produit. Il affiche l'identifiant, le temps écoulé
+sur la cible, les checkpoints et leur dernière vérification. Le coût réseau par cycle est dérivé
+du dernier échantillon correspondant de `.pallas/m32-network-cost.jsonl`; sans échantillon, il
+reste `UNKNOWN`. Le panneau `KILL SWITCH` combine l'état durable et la présence de `.pallas/KILL`
+en indiquant explicitement sa source. Aucun de ces fichiers n'est modifié par l'Observatory.
 
 ## Frontière read-only
 
@@ -58,8 +65,9 @@ séparément.
   de modification du dry-run.
 - Le serveur expose uniquement `GET /` et `GET /api/snapshot`. Toute autre méthode reçoit
   `405` et toute autre route `404`.
-- Les seules entrées locales sont `.pallas/ledger.json` et `.pallas/risk-state.json`, ouvertes
-  en lecture. Le lanceur écrit uniquement `.pallas/observatory-loop.json`, un statut
+- Les entrées locales sont `.pallas/ledger.json`, `.pallas/risk-state.json`, `.pallas/KILL`, les
+  artefacts de campagne pointés par `.pallas/m27-72h-current`, l'instantané CT et le journal de
+  coût réseau, tous ouverts en lecture. Le lanceur écrit uniquement `.pallas/observatory-loop.json`, un statut
   opérationnel sans autorité métier; l'UI le lit sans le modifier. Le seul accès distant de
   l'UI est `GET https://clob.polymarket.com/book?token_id=…`.
 - L'UI ne recalcule aucune décision risk : elle affiche la dernière décision réellement
