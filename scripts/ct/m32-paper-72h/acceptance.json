@@ -1,0 +1,8 @@
+{
+  "criteria": [
+    {"id":"AC-020-01","name":"LaunchControl","assertion":"wrapper vivant et seed signé"},
+    {"id":"AC-020-02","name":"LedgerSigned","assertion":"ledger supervisé vérifié"},
+    {"id":"AC-020-03","name":"StrictDryRun","assertion":"dry_run_verified=true"},
+    {"id":"AC-020-04","name":"CheckpointsProduce","assertion":"checkpoints.jsonl amorcé"}
+  ]
+}
