@@ -15,7 +15,7 @@ aucune ne passe par `@pallas` aujourd'hui.
 | passphrase | `PALLAS_CREDENTIAL_KEY` — dérive la clé AES-256-GCM du vault |
 | API key | credentials CLOB Polymarket (`apiKey`/`apiSecret`), révocables côté plateforme |
 | ledger | journal chaîné SHA-256 + checkpoint signé Ed25519 (`packages/ledger`) |
-| cancel-all | capacité d'annulation massive des ordres — **dépend de PALLAS-M14** (non livrée) |
+| cancel-all | capacité d'annulation massive des ordres — **livrée (PALLAS-M14), durcie PALLAS-M25** |
 
 Prérequis pour ce runbook : accès au compte CLOB (dashboard API), accès au wallet
 (Ethereum/Polygon), shell avec le dépôt Pallas monté, `openssl`.
@@ -33,12 +33,15 @@ Prérequis pour ce runbook : accès au compte CLOB (dashboard API), accès au wa
 
 ## 2. Immédiat (T+0, toutes suspicions)
 
-1. **Arrêter le process Pallas** : `systemctl --user stop pallas*` (ou kill le process run-loop).
-   Un process qui continue tourne avec des secrets déjà compromis.
-2. **Ne PAS mettre à jour le vault avant l'arrêt** — toute écriture après accusations est suspecte.
-3. **Geler le ledger** : copier `ledger.json` + `*.sig` vers `/tmp/pallas-ledger-freeze-$(date +%F)`.
+1. **Engager d'abord le fichier KILL**, puis attendre dans le ledger un
+   `kill_switch_sync` avec `cancelAll:"called"`. Le run loop surveille ce fichier
+   à chaque cycle ; sans process Pallas actif, aucun code ne peut appeler l'exchange.
+2. **Arrêter ensuite le process Pallas** : `systemctl --user stop pallas*` (ou kill le process
+   run-loop). Un process qui continue tourne avec des secrets déjà compromis.
+3. **Ne PAS mettre à jour le vault avant l'arrêt** — toute écriture après accusations est suspecte.
+4. **Geler le ledger** : copier `ledger.json` + `*.sig` vers `/tmp/pallas-ledger-freeze-$(date +%F)`.
    Ne pas modifier cette copie — c'est la preuve de l'état.
-4. **Noter l'heure** de la suspection dans le journal (chaîne de preuve).
+5. **Noter l'heure** de la suspection dans le journal (chaîne de preuve).
 
 ## 3. Révoquer la clé API (si c'est la clé API compromise)
 
@@ -49,16 +52,18 @@ Prérequis pour ce runbook : accès au compte CLOB (dashboard API), accès au wa
 
 ## 4. Annuler les ordres ouverts (cancel-all industrielle)
 
-> **Blocage assumé** : la capacité d'annulation massive programmatique dépend de PALLAS-M14
-> (non livrée au 2026-09-11). Tant qu'elle n'est pas livrée :
+> **Capacité disponible (PALLAS-M14 livrée, durcie PALLAS-M25).** L'arrêt d'urgence est
+> désormais outillé, mais rien ne remplace la décision opérateur :
 >
-> - **Ordres ouverts** : annulation MANUELLE sur le dashboard CLOB, ordre par ordre, en
->   commençant par les plus grands notionales.
-> - **Fonds** : si la clé privée wallet est compromise, supposer que les fonds du compte
->   peuvent être drainés AVANT toute annulation → transfert vers un wallet de secours
->   PREMIER (section 5), l'annulation des ordres étant moins critique qu'un drain.
-> - **Après PALLAS-M14 livrée** : `cancel-all` sur l'ensemble des marchés, avec relecture du
->   ledger pour tout ordre suspect (section 6) AVANT le cancel.
+> - **Arrêt immédiat SANS modification de code** : créer le fichier-drapeau `.pallas/KILL` (ou le
+>   chemin `PALLAS_KILL_SWITCH_FILE`) pendant que le run loop fonctionne. Le point d'émission
+>   refuse immédiatement tout ordre (M25) et le prochain cycle déclenche un
+>   `cancelAllOrders()` RÉEL (`DELETE /cancel-all`). Vérifier sa preuve ledger avant d'arrêter.
+> - **Fonds d'abord si la clé privée wallet est compromise** : transférer vers un wallet de
+>   secours (section 5) AVANT toute annulation — un drain est plus critique qu'un ordre
+>   resté ouvert.
+> - **Ordres ouverts** : `cancel-all` sur l'ensemble des marchés, avec relecture du ledger
+>   pour tout ordre suspect (section 6) AVANT le cancel.
 
 ## 5. Rotation (clé privée wallet OU passphrase)
 
@@ -72,6 +77,10 @@ sur le MATÉRIEL COMPROMIS OU PAS :
 3. **Vault** : re-chiffrer avec une NOUVELLE passphrase `openssl rand -hex 32`
    (jamais réutiliser l'ancienne, même si elle n'est PAS compromise). Écrire le vault AVEC
    permissions `0600` (le code refuse les fichiers trop larges — `SecretFilePermissionsError`).
+   Procédure REPRODUCTIBLE et versionnée : `node scripts/rotate-credentials.mjs` — génère des
+   credentials de TEST à la volée, re-chiffre, vérifie que l'ancienne passphrase n'ouvre plus
+   le nouveau vault, applique `0600`, et rapporte explicitement si un testnet a réellement été
+   utilisé (sinon « skipped », jamais présenté comme une exécution réelle).
 4. **Nettoyer** : `shred -u` l'ancien fichier vault/env si le support est un disque classique ;
    documentation du remplacement dans le journal de rotation.
 
@@ -98,9 +107,10 @@ sur le MATÉRIEL COMPROMIS OU PAS :
 
 ## Récap exécutable (à cocher)
 
-- [ ] 2.1 process arrêté
-- [ ] 2.3 ledger gelé (`/tmp/pallas-ledger-freeze-*`)
-- [ ] 2.4 heure notée
+- [ ] 2.1 fichier KILL engagé + `cancelAll:"called"` vérifié
+- [ ] 2.2 process arrêté
+- [ ] 2.4 ledger gelé (`/tmp/pallas-ledger-freeze-*`)
+- [ ] 2.5 heure notée
 - [ ] 3. clés API compromise révoquées (preuve)
 - [ ] 4. ordres annulés / fonds transférés (selon priorité drain)
 - [ ] 5. wallet/API/passphrase rotés (vault 0600, nouveau `openssl rand -hex 32`)
@@ -109,6 +119,11 @@ sur le MATÉRIEL COMPROMIS OU PAS :
 
 ## Limites assumées du runbook
 
-- cancel-all dépend de PALLAS-M14 (non livrée) → annulation manuelle en attendant.
+- cancel-all est livré (M14) et déclenchable par le fichier externe `.pallas/KILL` (M25/M30),
+  sous réserve qu'un run loop authentifié soit actif pour observer le fichier. Un cycle ayant
+  observé son retrait réarme un futur dépôt ; chaque engagement continu reste idempotent.
+- Aucun testnet CLOB Polymarket officiel n'est connu : la dérivation/révocation réelle contre
+  un testnet n'a donc pas été exécutée par PALLAS-M28 (voir journal). La procédure exacte pour
+  un opérateur disposant d'un accès est fournie par `scripts/rotate-credentials.mjs`.
 - Aucune intégration KMS : la passphrase vit en env local ; la compromission machine =
   présomption de fuite de tout secret en clair (SECURITY.md § custody).

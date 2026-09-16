@@ -52,8 +52,9 @@ import {
 import {
   enforceKillSwitch,
   isLiveFootprint,
+  reconcileAllUnresolved,
+  reconcileAtStartup,
   reconcileOrder,
-  reconcileScopeForMarket,
   type ReconcileContext,
 } from './reconciliation.js';
 
@@ -210,6 +211,56 @@ export async function runReferenceCycle(
     payload: threatSummary ?? { source: 'none', threats: 0, modified: false },
   });
 
+  // --- étape 2.4 (PALLAS-M23/M29) : rattrapage + réconciliation AVANT le signal ---
+  // PALLAS-M29/R-01 : cette étape ne dépend PLUS de la présence d'un signal.
+  // Elle tourne à CHAQUE cycle, y compris `no_signal` — sinon un marché
+  // silencieux peut porter un AMBIGUOUS indéfiniment, et le rattrapage
+  // état<->ledger ne se déclenche jamais (constat de la campagne M27 : 93/93
+  // cycles no_signal, aucune réconciliation).
+  const store = new DurableStateStore(opts.statePath);
+  // PALLAS-M30 : surveiller l'autorité externe à CHAQUE cycle. M29 ne
+  // l'évaluait qu'au démarrage : un fichier KILL créé ensuite bloquait les
+  // émissions mais ne déclenchait pas le cancel-all des ordres déjà ouverts.
+  const cycleKillSwitch = await enforceKillSwitch(store, opts.client);
+  await ledger.append({
+    event: 'kill_switch_sync',
+    timestamp: new Date().toISOString(),
+    payload: { ...cycleKillSwitch, cycle },
+  });
+  await reconcileStateLedger(store, ledger);
+  let reconcileSummary: { results: number; clear: boolean; skipped: boolean } = {
+    results: 0,
+    clear: true,
+    skipped: true,
+  };
+  if (opts.signer) {
+    const ctx: ReconcileContext = { store, client: opts.client, maker: opts.signer.address };
+    try {
+      const all = await reconcileAllUnresolved(ctx);
+      reconcileSummary = { results: all.results.length, clear: all.clear, skipped: false };
+    } catch (err) {
+      reconcileSummary = { ...reconcileSummary, skipped: false, clear: false };
+      // PALLAS-M20 : une réconciliation qui échoue est une anomalie opérationnelle
+      // à alerter (stock AMBIGUOUS non réglé → scope bloqué). Dédupliqué en mémoire.
+      emitAnomaly('RECONCILE_FAILED', 'reconcile all unresolved failed', {
+        error: err instanceof Error ? err.message.slice(0, 300) : String(err),
+      });
+      await ledger.append({
+        event: 'reconcile_scope_error',
+        timestamp: new Date().toISOString(),
+        payload: {
+          scope: 'all_unresolved',
+          error: err instanceof Error ? err.message.slice(0, 300) : String(err),
+        },
+      });
+    }
+  }
+  await ledger.append({
+    event: 'reconcile_scope',
+    timestamp: new Date().toISOString(),
+    payload: { scope: 'all_unresolved', ...reconcileSummary },
+  });
+
   // --- étape 1 : signal de la stratégie de référence ---
   const indicatorStart = Date.now();
   const signal = await opts.strategy.evaluate(opts.client);
@@ -225,47 +276,6 @@ export async function runReferenceCycle(
   }
 
   const trade = buildReferenceTradeRequest(signal, indicatorMs);
-  const store = new DurableStateStore(opts.statePath);
-
-  // --- étape 2.5 (PALLAS-M14) : réconciliation du scope AVANT la décision ---
-  // Si l'échange dispose d'identifiants L2 (maker), on interroge la réalité
-  // AVANT de statuer : tout AMBIGUOUS/SUBMITTING/SUBMMITTED du marché est
-  // convergé vers son sort réel. Échec réseau ⇒ on laisse le gate de scope
-  // (en dessous) faire barrage : jamais d'émission sur un marché non réglé.
-  let reconcileSummary: { results: number; clear: boolean; skipped: boolean } = {
-    results: 0,
-    clear: true,
-    skipped: true,
-  };
-  if (opts.signer) {
-    const ctx: ReconcileContext = { store, client: opts.client, maker: opts.signer.address };
-    try {
-      const scope = await reconcileScopeForMarket(ctx, trade.market_id);
-      reconcileSummary = { results: scope.results.length, clear: scope.clear, skipped: false };
-    } catch (err) {
-      reconcileSummary = { ...reconcileSummary, skipped: false, clear: false };
-      // PALLAS-M20 : une réconciliation qui échoue est une anomalie opérationnelle
-      // à alerter (stock AMBIGUOUS non réglé → scope bloqué). Dédupliqué en mémoire.
-      emitAnomaly('RECONCILE_FAILED', 'reconcile scope failed', {
-        market_id: trade.market_id,
-        error: err instanceof Error ? err.message.slice(0, 300) : String(err),
-      });
-      await ledger.append({
-        event: 'reconcile_scope_error',
-        timestamp: new Date().toISOString(),
-        payload: {
-          market_id: trade.market_id,
-          error: err instanceof Error ? err.message.slice(0, 300) : String(err),
-        },
-      });
-    }
-  }
-
-  await ledger.append({
-    event: 'reconcile_scope',
-    timestamp: new Date().toISOString(),
-    payload: { market_id: trade.market_id, ...reconcileSummary },
-  });
   // --- étape 3 : risk engine + écriture DURABLE de la décision (DECIDED) ---
   // Lecture + validation + persist DECIDED sous UN SEUL verrou : personne ne
   // peut écrire entre notre lecture d'état et l'enregistrement de la décision.
@@ -385,6 +395,54 @@ export async function runReferenceCycle(
     execution,
     ledgerRecords: ledger.length,
   };
+}
+
+/**
+ * PALLAS-M23 — réconciliation de démarrage ÉTAT <-> LEDGER (audit v0.4 F-01).
+ *
+ * L'état (snapshot checksummé) et le ledger (chaîne append-only) sont DEUX
+ * fichiers distincts, écrits séparément : un crash entre la transition durable
+ * ACKED et `ledger.append('execution_success')` laisse un ordre réel et
+ * reconnu SANS trace d'audit (fenêtre D). Ce rattrapage détecte les ordres ACKED
+ * dont le `correlation_id` n'apparaît dans AUCUNE entrée
+ * `execution_success` et émet une entrée de réparation — IDEMPOTENTE :
+ * une entrée déjà présente n'est jamais dupliquée.
+ *
+ * Fenêtre résiduelle assumée (documentée) : entre le crash et le prochain
+ * démarrage, le ledger ne porte pas encore la trace. L'état, lui, n'est jamais
+ * faux (il a été écrit DURABLEMENT avant l'appel réseau), et aucune ré-émission
+ * n'est possible sur ce correlationId (empreinte ACKED -> gate de scope M14).
+ */
+export async function reconcileStateLedger(
+  store: DurableStateStore,
+  ledger: FileLedger,
+): Promise<{ repaired: number; checked: number }> {
+  const doc = store.read();
+  const acknowledged = doc.orders.filter((o) => o.status === 'ACKED' && o.order_id != null);
+  if (acknowledged.length === 0) return { repaired: 0, checked: 0 };
+  const traced = new Set(
+    ledger.entries
+      .filter((e) => e.event === 'execution_success')
+      .map((e) => (e.payload as { correlation_id?: string } | undefined)?.correlation_id)
+      .filter((id): id is string => typeof id === 'string'),
+  );
+  let repaired = 0;
+  for (const order of acknowledged) {
+    if (traced.has(order.correlationId)) continue;
+    await ledger.append({
+      event: 'execution_success',
+      timestamp: new Date().toISOString(),
+      payload: {
+        recovered_at_restart: true,
+        orderId: order.order_id,
+        correlation_id: order.correlationId,
+        outcome: order.outcome ?? 'acked',
+        note: 'PALLAS-M23 — rattrapage: etat ACKED sans entree ledger (crash fenetre D)',
+      },
+    });
+    repaired += 1;
+  }
+  return { repaired, checked: acknowledged.length };
 }
 
 /** Statut courant du lifecycle (lecture fraîche du disque, fail-stop). */
@@ -574,6 +632,9 @@ async function main(): Promise<void> {
     return;
   }
   const cycles = Math.max(1, Number(process.env.PALLAS_REF_CYCLES ?? '3') || 3);
+  // PALLAS-M27 : pause entre cycles pour une campagne d'observation longue
+  // (sans marteler l'API). 0 = comportement d'origine.
+  const cycleSleepMs = Math.max(0, Number(process.env.PALLAS_REF_CYCLE_SLEEP_MS ?? '0') || 0);
   const threshold = Number(process.env.PALLAS_REF_THRESHOLD ?? '0.6');
   const size = Number(process.env.PALLAS_REF_SIZE ?? '1');
   // PALLAS-M15 : la configuration de risque est OPERATEUR, jamais portée par un
@@ -625,6 +686,10 @@ async function main(): Promise<void> {
   let store: DurableStateStore;
   try {
     store = new DurableStateStore(statePath);
+    // PALLAS-M26 : la CONSTRUCTION ne lit rien — c'est la LECTURE qui peut
+    // échouer sur corruption. On lit ici pour un fail-stop au démarrage.
+    // `read()` émet lui-même STATE_CORRUPT au point de détection réel.
+    store.read();
   } catch (err) {
     emitAnomaly('STATE_CORRUPT', 'durable state load fail-stop triggered', {
       path: statePath,
@@ -658,19 +723,54 @@ async function main(): Promise<void> {
       payload: { ...record, elapsed_ms: Date.now() - killStart },
     });
   } catch (err) {
+    // PALLAS-M26 : si l'erreur EST une corruption d'état, `store.read()`
+    // relève StateCorruptionError ; cette seconde lecture ne doit ni masquer
+    // l'erreur d'origine ni faire crasher le chemin d'alerte.
+    let engaged: boolean | null = null;
+    try {
+      engaged = store.read().risk.kill_switch_engaged;
+    } catch {
+      engaged = null;
+    }
     await ledger.append({
       event: 'kill_switch_sync',
       timestamp: new Date().toISOString(),
       payload: {
-        engaged: store.read().risk.kill_switch_engaged,
+        engaged,
         error: err instanceof Error ? err.message.slice(0, 300) : String(err),
         elapsed_ms: Date.now() - killStart,
       },
     });
   }
 
-  console.log(
-    JSON.stringify({
+  // PALLAS-M29/R-01 : réconciliation AU DÉMARRAGE — ordres non réglés + ordres
+  // ouverts externes — quand un maker L2 est disponible. `reconcileAtStartup`
+  // n'était auparavant référencé que par son test (code mort).
+  if (signer) {
+    try {
+      const startup = await reconcileAtStartup({ store, client, maker: signer.address });
+      await ledger.append({
+        event: 'reconcile_startup',
+        timestamp: new Date().toISOString(),
+        payload: {
+          results: startup.results.length,
+          external_orders: startup.externalOrders,
+          open_orders: startup.openOrders.length,
+        },
+      });
+    } catch (err) {
+      emitAnomaly('RECONCILE_FAILED', 'reconcile at startup failed', {
+        error: err instanceof Error ? err.message.slice(0, 300) : String(err),
+      });
+      await ledger.append({
+        event: 'reconcile_startup_error',
+        timestamp: new Date().toISOString(),
+        payload: { error: err instanceof Error ? err.message.slice(0, 300) : String(err) },
+      });
+    }
+  }
+
+  console.log(    JSON.stringify({
       event: 'run_start',
       cycles,
       token_ids: tokenIds,
@@ -694,6 +794,7 @@ async function main(): Promise<void> {
       externalText,
     });
     console.log(JSON.stringify(result));
+    if (cycleSleepMs > 0) await new Promise((r) => setTimeout(r, cycleSleepMs));
   }
 
   const diskLedger = FileLedger.load(ledgerPath, { publicKeyPem: ledgerPublicKey });

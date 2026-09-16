@@ -22,8 +22,8 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { PolymarketClient, ReadOrder } from '@pallas/execution';
-import { setGlobalKillSwitch } from '@pallas/execution';
+import { isKillSwitchFileEngaged, type PolymarketClient, type ReadOrder, type ReadTrade } from '@pallas/execution';
+import { setGlobalKillSwitch } from '@pallas/execution/kill-switch-authority';
 
 import { newLifecycle, transitionLifecycle, type DurableStateStore, type OrderLifecycle } from './durable-state.js';
 
@@ -48,7 +48,37 @@ export interface ReconcileContext {
   maker: string;
 }
 
+interface OpenOrdersSnapshot {
+  ok: boolean;
+  orders: ReadOrder[];
+  error?: string;
+}
+
 const SIDE_TO_CLOB: Record<string, string> = { buy: 'BUY', sell: 'SELL' };
+
+/**
+ * PALLAS-M22 — âge minimal d'un ordre avant de pouvoir conclure « annulé »
+ * par ABSENCE (ni ordre ouvert, ni fill). La disparition des ordres ouverts
+ * n'est PAS une preuve : un ordre totalement rempli disparaît aussi. Conclure
+ * trop tôt risquerait de libérer le scope et de doubler une position. On exige
+ * donc que la fenêtre d'observation [created_at, now] soit significative — sauf
+ * si l'exchange a explicitement répondu 404 sur l'order_id (id inconnu = ordre
+ * jamais accepté), qui est une preuve positive d'inexistence.
+ */
+export const MIN_ABSENT_CANCEL_AGE_MS = 60_000;
+
+/** Marge avant `created_at` dans la fenêtre de recherche des trades (horloges). */
+const TRADE_WINDOW_SLACK_S = 300;
+
+function orderAgeMs(order: OrderLifecycle): number {
+  const t = Date.parse(order.created_at);
+  return Number.isFinite(t) ? Date.now() - t : 0; // non datable => fenêtre NON écoulée (fail-safe)
+}
+
+function tradeWindowAfter(order: OrderLifecycle): number | undefined {
+  const t = Date.parse(order.created_at);
+  return Number.isFinite(t) ? Math.floor(t / 1000) - TRADE_WINDOW_SLACK_S : undefined;
+}
 
 /** Un ordre local a-t-il une empreinte à réconcilier avant ré-émission ? */
 export function isUnresolved(order: OrderLifecycle): boolean {
@@ -85,14 +115,33 @@ function liveStatus(remote: ReadOrder | null): 'open' | 'filled' | 'canceled' | 
   return 'unknown';
 }
 
-/** Match local <-> carte CLOB : même actif, même côté, prix ~, taille ~. */
-function matches(order: OrderLifecycle, remote: ReadOrder): boolean {
+/**
+ * Match local <-> ORDRE OUVERT : même actif, même côté, prix ~. La taille lue
+ * est la taille RESTANTE (`<= quantity`) : un ordre partiellement rempli reste
+ * un ordre ouvert pour le même ordre local, il ne doit donc pas être écarté
+ * sur une égalité de taille stricte (PALLAS-M22 — corrige un faux négatif).
+ */
+function matchesOpen(order: OrderLifecycle, remote: ReadOrder): boolean {
   if (remote.assetId !== order.market_id) return false;
   if ((remote.side ?? '').toUpperCase() !== SIDE_TO_CLOB[order.side]) return false;
-  if (remote.price == null || remote.size == null) return false;
-  const priceOk = Math.abs(remote.price - order.price) <= 1e-3;
-  const sizeOk = Math.abs(remote.size - order.quantity) <= 1e-6 * Math.max(1, order.quantity);
-  return priceOk && sizeOk;
+  if (remote.price == null) return false;
+  if (Math.abs(remote.price - order.price) > 1e-3) return false;
+  if (remote.size != null && remote.size > order.quantity * (1 + 1e-6) + 1e-9) return false;
+  return true;
+}
+
+/**
+ * Match local <-> TRADE (fill) : même actif, même côté, prix ~, taille bornée
+ * par la quantité demandée. C'est la preuve POSITIVE d'exécution (PALLAS-M22).
+ */
+function matchesTrade(order: OrderLifecycle, trade: ReadTrade): boolean {
+  if (trade.assetId !== order.market_id) return false;
+  if ((trade.side ?? '').toUpperCase() !== SIDE_TO_CLOB[order.side]) return false;
+  if (trade.price == null || trade.size == null) return false;
+  if (trade.size <= 0) return false;
+  if (Math.abs(trade.price - order.price) > 1e-3) return false;
+  if (trade.size > order.quantity * (1 + 1e-6) + 1e-9) return false;
+  return true;
 }
 
 /**
@@ -107,6 +156,7 @@ function matches(order: OrderLifecycle, remote: ReadOrder): boolean {
 export async function reconcileOrder(
   ctx: ReconcileContext,
   correlationId: string,
+  openSnapshot?: OpenOrdersSnapshot,
 ): Promise<ReconciliationResult | null> {
   const { store, client, maker } = ctx;
 
@@ -141,7 +191,7 @@ export async function reconcileOrder(
   }
 
   // (2) Preuve réseau (lecture seule, jamais d'écriture).
-  const evidence = await gatherEvidence(client, maker, order);
+  const evidence = await gatherEvidence(client, maker, order, openSnapshot);
 
   // (3) Convergence idempotente sous verrou.
   return store.withLock((doc2) => {
@@ -169,98 +219,157 @@ export async function reconcileOrder(
       convergence: updated.status === 'ACKED' ? 'ACKED' : 'TERMINAL',
       orderId: updated.order_id ?? null,
       status: updated.status,
-      detail: `${evidence.kind} (etat reel: ${evidence.remoteStatus ?? 'inconnu'})`,
+      detail: `${evidenceSummary(evidence)} (etat reel: ${updated.status})`,
     };
   });
 }
 
+/**
+ * PALLAS-M22 — corpus de preuves réunies auprès de l'exchange.
+ *
+ * La distinction essentielle : « introuvable dans les ordres ouverts » n'est
+ * PAS « inexistant ». Un ordre totalement rempli quitte les ordres ouverts ;
+ * seule la lecture de l'historique des trades (`/data/trades`) fournit la
+ * preuve positive d'exécution. On collecte donc trois sources indépendantes, et
+ * on mémorise lesquelles ont RÉELLEMENT répondu (une erreur réseau interdit
+ * toute conclusion par absence).
+ */
 interface Evidence {
-  kind: 'order_id' | 'open_scan' | 'query_error';
-  remote?: ReadOrder;
-  remoteStatus?: string;
-  orderId?: string;
-  error?: string;
+  /** Ordre lu directement par `getOrder(order_id)` (couvre filled/cancelled). */
+  direct?: ReadOrder;
+  /** `getOrder` a explicitement répondu 404 : id inconnu de l'exchange. */
+  directMissing?: boolean;
+  /** Le scan des ordres ouverts a abouti (réponse HTTP valide). */
+  openScanOk: boolean;
+  openMatch?: ReadOrder;
+  /** Le scan des trades/fills a abouti (réponse HTTP valide). */
+  tradesScanOk: boolean;
+  tradeCount: number;
+  filledQuantity: number;
+  errors: string[];
 }
 
-async function gatherEvidence(client: PolymarketClient, maker: string, order: OrderLifecycle): Promise<Evidence> {
-  if (order.order_id != null) {
+async function gatherEvidence(
+  client: PolymarketClient,
+  maker: string,
+  order: OrderLifecycle,
+  openSnapshot?: OpenOrdersSnapshot,
+): Promise<Evidence> {
+  const ev: Evidence = { openScanOk: false, tradesScanOk: false, tradeCount: 0, filledQuantity: 0, errors: [] };
+
+  // (0) Preuve directe par order_id — l'exchange couvre explicitement les
+  // ordres annulés ET totalement remplis (docs `/data/order`).
+  if (order.order_id != null && order.order_id !== '') {
     try {
-      const remote = await client.getOrder(order.order_id);
-      return {
-        kind: order.order_id !== '' ? 'order_id' : 'open_scan',
-        remote,
-        remoteStatus: remote.status ?? undefined,
-        orderId: remote.orderId,
-      };
-    } catch {
-      // order_id inconnu de l'exchange : traité comme inexistant (convergence
-      // vers "annulé"), jamais comme une ré-émission aveugle.
-      return { kind: 'order_id', remoteStatus: 'unknown', error: 'getOrder failed or 404' };
+      ev.direct = await client.getOrder(order.order_id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      ev.errors.push(`getOrder: ${msg}`);
+      if (/\b404\b/.test(msg)) ev.directMissing = true;
     }
   }
-  try {
-    const open = await client.getOpenOrders(maker, { filterState: 'open' });
-    const matched = open.find((remote) => matches(order, remote));
-    return {
-      kind: 'open_scan',
-      remote: matched ?? undefined,
-      remoteStatus: matched?.status ?? (open.length === 0 ? 'no_open_orders' : 'no_match'),
-      orderId: matched?.orderId,
-    };
-  } catch (err) {
-    return { kind: 'query_error', error: err instanceof Error ? err.message : String(err) };
+
+  // (1) Scan des ordres OUVERTS (ordre vivant).
+  if (openSnapshot) {
+    ev.openScanOk = openSnapshot.ok;
+    ev.openMatch = openSnapshot.orders.find((remote) => matchesOpen(order, remote));
+    if (!openSnapshot.ok) ev.errors.push(`getOpenOrders: ${openSnapshot.error ?? 'snapshot failed'}`);
+  } else {
+    try {
+      const open = await client.getOpenOrders(maker, { filterState: 'open' });
+      ev.openScanOk = true;
+      ev.openMatch = open.find((remote) => matchesOpen(order, remote));
+    } catch (err) {
+      ev.errors.push(`getOpenOrders: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
+
+  // (2) Historique des TRADES/FILLS — la preuve positive qui manquait.
+  try {
+    const trades = await client.getTrades(maker, { assetId: order.market_id, after: tradeWindowAfter(order) });
+    ev.tradesScanOk = true;
+    const matched = trades.filter((t) => matchesTrade(order, t));
+    ev.tradeCount = matched.length;
+    ev.filledQuantity = matched.reduce((sum, t) => sum + (t.size ?? 0), 0);
+  } catch (err) {
+    ev.errors.push(`getTrades: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  return ev;
 }
 
-function evidenceToPatch(
-  evidence: Evidence,
-  target: OrderLifecycle,
-): { status: 'ACKED' | 'TERMINAL'; terminal_reason?: string; order_id?: string | null; outcome?: string } | null {
-  if (evidence.kind === 'query_error') return null; // réseau cassé : on ne force AUCUNE conclusion
-  if (evidence.remote) {
-    const kind = liveStatus(evidence.remote);
+function evidenceSummary(ev: Evidence): string {
+  const direct = ev.direct
+    ? `direct=${ev.direct.status ?? 'sans_statut'}`
+    : ev.directMissing
+      ? 'direct=404'
+      : 'direct=non_tente';
+  const open = ev.openMatch ? 'ouvert=trouve' : ev.openScanOk ? 'ouvert=aucun' : 'ouvert=erreur';
+  const trades = ev.tradesScanOk ? `trades=${ev.tradeCount} fill(s)/${ev.filledQuantity}` : 'trades=erreur';
+  return `${direct}, ${open}, ${trades}`;
+}
+
+type Patch = { status: 'ACKED' | 'TERMINAL'; terminal_reason?: string; order_id?: string | null; outcome?: string };
+
+/**
+ * PALLAS-M22 — convergence à TROIS issues, jamais deux :
+ *   1. preuve positive (ordre ouvert, ou fill) → ACKED / TERMINAL filled ;
+ *   2. absence CONFIRMÉE par les DEUX sources (ordres ouverts ET trades) sur une
+ *      fenêtre significative → TERMINAL cancelled (seule condition légitime) ;
+ *   3. impossible à déterminer (une source en erreur, ou fenêtre trop courte)
+ *      → `null` : l'ordre RESTE RECONCILING, le gate de scope continue de
+ *      barrer (mieux vaut bloquer trop longtemps que doubler une position).
+ */
+function evidenceToPatch(evidence: Evidence, target: OrderLifecycle): Patch | null {
+  // (1) Réponse directe par order_id.
+  if (evidence.direct) {
+    const kind = liveStatus(evidence.direct);
     if (kind === 'open') {
-      return { status: 'ACKED', order_id: evidence.remote.orderId, outcome: 'reconciled_open' };
+      return { status: 'ACKED', order_id: evidence.direct.orderId, outcome: 'reconciled_open' };
     }
     if (kind === 'filled') {
-      return {
-        status: 'TERMINAL',
-        terminal_reason: 'filled',
-        order_id: evidence.remote.orderId,
-        outcome: 'reconciled_filled',
-      };
-    }
-    if (kind === 'canceled') {
-      return {
-        status: 'TERMINAL',
-        terminal_reason: 'cancelled',
-        order_id: evidence.remote.orderId,
-        outcome: 'reconciled_cancelled',
-      };
+      return { status: 'TERMINAL', terminal_reason: 'filled', order_id: evidence.direct.orderId, outcome: 'reconciled_filled' };
     }
     if (kind === 'rejected') {
-      return {
-        status: 'TERMINAL',
-        terminal_reason: 'rejected',
-        order_id: evidence.remote.orderId,
-        outcome: 'reconciled_rejected',
-      };
+      return { status: 'TERMINAL', terminal_reason: 'rejected', order_id: evidence.direct.orderId, outcome: 'reconciled_rejected' };
     }
+    if (kind === 'canceled') {
+      // Annulation CONFIRMÉE par l'exchange. Si des fills existent, une position
+      // réelle subsiste : on la classe 'filled' (elle DOIT compter dans
+      // l'exposition), jamais 'cancelled' qui l'effacerait.
+      if (evidence.filledQuantity > 0) {
+        return { status: 'TERMINAL', terminal_reason: 'filled', order_id: evidence.direct.orderId, outcome: 'reconciled_filled_then_cancelled' };
+      }
+      return { status: 'TERMINAL', terminal_reason: 'cancelled', order_id: evidence.direct.orderId, outcome: 'reconciled_cancelled' };
+    }
+    // Statut non cartographié : on poursuit vers les scans (pas de conclusion).
   }
-  if (evidence.remoteStatus === 'unknown' || evidence.remoteStatus === 'no_match' || evidence.remoteStatus === 'no_open_orders') {
-    // introuvable chez l'exchange : instruction n'a jamais abouti (ou déjà
-    // remplie/annulée, hors fenêtre de scan) → convergence "inexistante".
-    // L'id local (quand il existait) est conservé à titre de trace.
-    return {
-      status: 'TERMINAL',
-      terminal_reason: 'cancelled',
-      outcome: 'not_found_on_exchange',
-    };
+
+  // (2) Ordre OUVERT confirmé par le scan : empreinte vivante, bloque le scope.
+  if (evidence.openMatch) {
+    return { status: 'ACKED', order_id: evidence.openMatch.orderId, outcome: 'reconciled_open' };
   }
-  if (target.status === 'RECONCILING') {
-    // toujours non conclu : on reste en attente (pas de fausse conclusion).
-    return null;
+
+  // (3) Preuve POSITIVE d'exécution par les trades — le cas que M14 ratait.
+  if (evidence.filledQuantity > 0) {
+    const tol = 1e-6 * Math.max(1, target.quantity) + 1e-9;
+    if (evidence.filledQuantity + tol >= target.quantity) {
+      return { status: 'TERMINAL', terminal_reason: 'filled', outcome: 'reconciled_filled_by_trade' };
+    }
+    // Remplissage PARTIEL : l'ordre reste vivant (reste à exécuter) → ACKED,
+    // le scope reste bloqué. Jamais 'cancelled', jamais 'filled' complet.
+    return { status: 'ACKED', outcome: 'reconciled_partial_fill' };
   }
+
+  // (4) AUCUNE preuve positive. 'cancelled' exige que les DEUX sources aient
+  // RÉPONDU sans erreur ET que l'absence soit concluante.
+  if (evidence.openScanOk && evidence.tradesScanOk) {
+    const conclusive = evidence.directMissing === true || orderAgeMs(target) >= MIN_ABSENT_CANCEL_AGE_MS;
+    if (!conclusive) return null; // fenêtre trop courte -> reste RECONCILING
+    return { status: 'TERMINAL', terminal_reason: 'cancelled', outcome: 'not_found_on_exchange' };
+  }
+
+  // (5) Au moins une source n'a pas répondu : AUCUNE conclusion.
   return null;
 }
 
@@ -282,6 +391,50 @@ export async function reconcileScopeForMarket(
   const after = ctx.store.read();
   const remaining = after.orders.filter((o) => o.market_id === marketId && isUnresolved(o));
   return { results, clear: remaining.length === 0 };
+}
+
+/**
+ * PALLAS-M29/R-01 — réconcilie TOUS les ordres locaux non réglés, QUEL QUE SOIT
+ * leur marché. `reconcileScopeForMarket` ne traite que le marché du signal
+ * courant : un marché SILENCIEUX (aucun signal) pouvait donc porter un ordre
+ * AMBIGUOUS/SUBMITTING indéfiniment, et le rattrapage état↔ledger ne tournait
+ * jamais. Cette variante est destinée à être appelée à CHAQUE cycle, y compris
+ * `no_signal`.
+ */
+type ReconcileAllResult = { results: ReconciliationResult[]; clear: boolean };
+const reconcileFlights = new Map<string, Promise<ReconcileAllResult>>();
+
+async function runReconcileAllUnresolved(ctx: ReconcileContext): Promise<ReconcileAllResult> {
+  const unresolved = ctx.store.read().orders.filter((o) => isUnresolved(o));
+  const results: ReconciliationResult[] = [];
+  if (unresolved.length === 0) return { results, clear: true };
+
+  // M30 : /data/orders renvoie déjà tous les ordres ouverts du maker. Le lire
+  // une fois par ordre coûtait N appels identiques ; une passe partage désormais
+  // le même snapshot. Les trades restent filtrés par asset et les getOrder par id.
+  let openSnapshot: OpenOrdersSnapshot;
+  try {
+    openSnapshot = { ok: true, orders: await ctx.client.getOpenOrders(ctx.maker, { filterState: 'open' }) };
+  } catch (err) {
+    openSnapshot = { ok: false, orders: [], error: err instanceof Error ? err.message : String(err) };
+  }
+  for (const order of unresolved) {
+    const res = await reconcileOrder(ctx, order.correlationId, openSnapshot);
+    if (res) results.push(res);
+  }
+  const remaining = ctx.store.read().orders.filter((o) => isUnresolved(o));
+  return { results, clear: remaining.length === 0 };
+}
+
+export function reconcileAllUnresolved(ctx: ReconcileContext): Promise<ReconcileAllResult> {
+  const key = ctx.store.path;
+  const active = reconcileFlights.get(key);
+  if (active) return active;
+  const flight = runReconcileAllUnresolved(ctx).finally(() => {
+    if (reconcileFlights.get(key) === flight) reconcileFlights.delete(key);
+  });
+  reconcileFlights.set(key, flight);
+  return flight;
 }
 
 /** Un scope (marché) a-t-il encore une empreinte vivante bloquant l'émission ? */
@@ -360,14 +513,33 @@ export async function enforceKillSwitch(
   client: PolymarketClient,
 ): Promise<{ engaged: boolean; cancelAll: 'not_needed' | 'called' | 'dry_run_blocked' | 'error'; detail: string }> {
   const doc = store.read();
-  const engaged = doc.risk.kill_switch_engaged;
-  setGlobalKillSwitch(engaged);
+  const stateEngaged = doc.risk.kill_switch_engaged;
+  // PALLAS-M29/R-02 : le fichier-drapeau externe (M25) est une autorité
+  // d'ENGAGEMENT à part entière — il doit DÉCLENCHER le cancel-all, pas
+  // seulement bloquer les nouvelles émissions. On combine donc les deux
+  // vérités (état durable OU fichier présent).
+  const fileEngaged = isKillSwitchFileEngaged();
+  setGlobalKillSwitch(stateEngaged);
+  const engaged = stateEngaged || fileEngaged;
   if (!engaged) {
-    return { engaged, cancelAll: 'not_needed', detail: 'kill switch not engaged' };
+    // M30 : le marqueur vaut pour UN engagement continu, pas pour toute la vie
+    // de l'état. Un cycle ayant observé le désengagement réarme la prochaine
+    // transition false→true (fichier retiré puis redéposé, ou état réengagé).
+    const meta = (doc.meta ?? {}) as Record<string, unknown>;
+    if (meta['kill_switch_cancelall_called'] === true) {
+      await store.withLock((doc2) => {
+        const next = { ...((doc2.meta ?? {}) as Record<string, unknown>) };
+        delete next['kill_switch_cancelall_called'];
+        doc2.meta = next;
+        store.write(doc2);
+      });
+    }
+    return { engaged: false, cancelAll: 'not_needed', detail: 'kill switch not engaged' };
   }
+  const source = stateEngaged && fileEngaged ? 'state+file' : stateEngaged ? 'state' : 'file';
   const meta = (doc.meta ?? {}) as Record<string, unknown>;
   if (meta['kill_switch_cancelall_called'] === true) {
-    return { engaged, cancelAll: 'not_needed', detail: 'cancel-all already issued for this engagement' };
+    return { engaged, cancelAll: 'not_needed', detail: `cancel-all already issued for this engagement (source: ${source})` };
   }
   try {
     const res = await client.cancelAllOrders();
@@ -377,7 +549,7 @@ export async function enforceKillSwitch(
       doc2.meta = { ...m, kill_switch_cancelall_called: true };
       store.write(doc2);
     });
-    return { engaged, cancelAll: called ? 'called' : 'dry_run_blocked', detail: 'cancel-all issued at emission gate' };
+    return { engaged, cancelAll: called ? 'called' : 'dry_run_blocked', detail: `cancel-all issued at emission gate (source: ${source})` };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isDry = message.includes('blocked in dry-run');

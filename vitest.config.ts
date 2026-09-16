@@ -7,7 +7,12 @@ export default defineConfig({
     include: ['packages/*/src/**/*.test.ts'],
     // PALLAS-M17 : mode test explicite — active les injections test-only
     // (isDryRun de PolymarketClient). Non documenté en usage production.
-    env: { PALLAS_TEST_MODE: '1' },
+    env: {
+      PALLAS_TEST_MODE: '1',
+      // PALLAS-M26 : les tests de corruption émettent de vraies alertes ; on
+      // les isole du fichier d'exploitation (.pallas/alerts.jsonl).
+      PALLAS_ALERT_FILE: '.pallas/test-alerts.jsonl',
+    },
     // PALLAS-M20 : couverture V8 (provider ajouté en devDependencies).
     // Seuils calibrés sous la mesure réelle du 2026-09-11 (statements 83.76,
     // branches 79.72, functions 91.63, lines 83.76) — en CI, une régression
