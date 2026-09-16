@@ -55,4 +55,4 @@ jobs:
       # --coverage. Seuils calibrés sous la mesure réelle du 2026-09-11
       # (vitest.config.ts) — un échec CI si on régresse, jamais un seuil
       # fantaisiste. `--reporter=text` affiche le détail dans la sortie.
-      - run: nix-shell --run "npm ci && npm run build && npm run coverage"
+      - run: nix-shell --run "npm ci && npm run build && npm run coverage -- --reporter=text"
