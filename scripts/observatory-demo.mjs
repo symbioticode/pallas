@@ -64,7 +64,7 @@ function writeStatus(status, detail = {}) {
   writeFileSync(statusPath, JSON.stringify({ status, timestamp: new Date().toISOString(), ...detail }, null, 2) + '\n', 'utf8');
 }
 const demoThreshold = process.env.PALLAS_REF_THRESHOLD ?? '1';
-const env = { ...process.env, PALLAS_REF_TOKEN_ID: selected.tokenId, PALLAS_REF_THRESHOLD: demoThreshold, PALLAS_REF_SIZE: process.env.PALLAS_REF_SIZE ?? '1', PALLAS_REF_CYCLES: process.env.PALLAS_REF_CYCLES ?? '100', PALLAS_REF_MARKET_QUESTION: selected.question, PALLAS_REF_MARKET_OUTCOME: selected.outcome, PALLAS_OBSERVATORY_DEMO_OVERRIDE: demoThreshold === '1' ? 'true' : 'false' };
+const env = { ...process.env, PALLAS_LEDGER_MODE: process.env.PALLAS_LEDGER_MODE ?? 'dev', PALLAS_REF_TOKEN_ID: selected.tokenId, PALLAS_REF_THRESHOLD: demoThreshold, PALLAS_REF_SIZE: process.env.PALLAS_REF_SIZE ?? '1', PALLAS_REF_CYCLES: process.env.PALLAS_REF_CYCLES ?? '100', PALLAS_REF_MARKET_QUESTION: selected.question, PALLAS_REF_MARKET_OUTCOME: selected.outcome, PALLAS_OBSERVATORY_DEMO_OVERRIDE: demoThreshold === '1' ? 'true' : 'false' };
 console.log(`Marché sélectionné : ${selected.question}`);
 console.log(`Best ask actuel    : ${selected.ask}`);
 console.log(`Outcome            : ${selected.outcome}`);

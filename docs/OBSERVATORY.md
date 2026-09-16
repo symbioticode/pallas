@@ -11,11 +11,18 @@ Une seule commande choisit automatiquement un marché actif, lance le serveur et
 loop dry-run :
 
 ```bash
-nix-shell --run "npm run build && npm run observatory:demo"
+nix-shell --run "npm run build && PALLAS_LEDGER_MODE=dev npm run observatory:demo"
 ```
 
 Ouvrir ensuite l'URL affichée : <http://127.0.0.1:4173>. Aucun token ID à rechercher ou à
 copier. Garder le terminal ouvert ; `Ctrl+C` arrête les deux processus.
+
+**`PALLAS_LEDGER_MODE=dev` est requis** pour la démo hors production : en mode `supervised`
+(défaut), le ledger signé est obligatoire et le démarrage de la boucle est refusé sans clé
+Ed25519 (`FATAL: … aucune cle publique de ledger configuree`). `dev` accepte un ledger non signé,
+avec avertissement explicite, et est **explicitement non probant** — interdit pour un run réel.
+Le lanceur `observatory-demo.mjs` définit `dev` par défaut (surchargeable par l'environnement)
+pour que la commande documentée fonctionne telle quelle.
 
 ### Démarrage manuel
 
