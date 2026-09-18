@@ -15,6 +15,7 @@ export interface ObservatorySnapshot {
     name: 'PALLAS';
     version: string;
     commit: string | null;
+    baseline: { tag: string | null; commit: string | null };
     mode: 'DRY RUN';
     ledger: 'VALID' | 'INVALID' | 'EMPTY';
     /** PALLAS-M16 : un checkpoint .sig ancre-t-il la chaîne ? */
@@ -23,6 +24,21 @@ export interface ObservatorySnapshot {
     lastEventAt: string | null;
     loop: 'RUNNING' | 'STOPPED' | 'STALE' | 'UNKNOWN';
     loopAgeSeconds: number | null;
+  };
+  campaign: {
+    status: 'ACTIVE' | 'COMPLETE' | 'UNKNOWN' | 'INVALID';
+    id: string | null;
+    startedAt: string | null;
+    elapsedMinutes: number | null;
+    targetMinutes: number | null;
+    checkpointsSigned: number;
+    lastCheckpoint: 'VERIFIED' | 'INVALID' | 'ABSENT';
+    updatedAt: string | null;
+    networkCallsPerCycle: number | null;
+  };
+  killSwitch: {
+    engaged: boolean | null;
+    source: 'NONE' | 'DURABLE_STATE' | 'KILL_FILE' | 'BOTH' | 'UNKNOWN';
   };
   durability: {
     format: 'V2' | 'LEGACY_V1' | 'MISSING' | 'CORRUPT';

@@ -5,7 +5,12 @@ target/
 .env
 .coverage/
 
-# Audit ponctuel du depot (non suivi, reference le HEAD de son epoque)
-docs/AUDIT-PALLAS*.md
+# Audits PALLAS — VERSIONNES depuis PALLAS-M21 (2026-09-12).
+# La finalisation repose sur une chaine d'audits compares dans le temps
+# (v0.1 -> v0.2 -> v0.2.1 -> v0.3 -> v0.4) : leur contenu est desormais suivi
+# par git pour que l'historique soit reconstituable sans copie locale.
+# Avant M21, seule la v0.1 etait versionnee (par accident), les suivantes
+# etaient ignorees — tracabilite incoherente. Voir docs/SECURITY.md,
+# section « Chaine d'audits — tracabilite (PALLAS-M21) ».
 # .pallas (ledger + etat du pipeline, artefact local)
 .pallas/

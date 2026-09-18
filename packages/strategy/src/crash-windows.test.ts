@@ -23,7 +23,7 @@ import { PolymarketClient } from '@pallas/execution';
 import { FileLedger } from '@pallas/ledger';
 
 import { ReferenceStrategy } from './reference.js';
-import { CrashSimulationError, runReferenceCycle } from './run-reference-loop.js';
+import { CrashSimulationError, reconcileStateLedger, runReferenceCycle } from './run-reference-loop.js';
 import { DurableStateStore, newLifecycle, transitionLifecycle } from './durable-state.js';
 
 afterEach(() => {
@@ -48,6 +48,8 @@ const DECISION_ALLOW =
   `"rejected_by":[],"suggested_size_usd":25},"state":${VALID_STATE_JSON}}`;
 
 const TOKEN = '1234567890123456789012345678901234567890123456789012345678901234';
+const PK_ONE = '0000000000000000000000000000000000000000000000000000000000000001';
+const ADDR = '0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf';
 
 /** Configuration de risque de test (opérateur) — jamais portée par un trade. */
 const TEST_RISK_CONFIG = {
@@ -194,5 +196,50 @@ describe('Fenêtre D — ordre réel reconnu mais trace ledger absente', () => {
     expect(env.ledger.entries.some((e) => e.event === 'execution_success')).toBe(false);
     // ⇒ une réconciliation (M14) sur order_id est possible après redémarrage,
     //    sans jamais ré-émettre sur ce correlation_id.
+  });
+});
+
+describe('Fenêtre D (PALLAS-M23) — crash RÉEL sur le chemin de production', () => {
+  test('crash réel après ACKED (attemptPlaceOrder), avant append ledger : rattrapage idempotent au redémarrage', async () => {
+    vi.stubEnv('PALLAS_RISK_BIN', fakeRiskBinary(DECISION_ALLOW));
+    const env = setup();
+    const client = env.dry;
+    // Le VRAI chemin attemptPlaceOrder est exercé : placeOrder réussit (mock),
+    // l'état passe durablement ACKED, PUIS le crash survient avant ledger.append.
+    vi.spyOn(client, 'placeOrder').mockResolvedValue({
+      orderId: 'order-real-1',
+      status: 'open',
+      dryRun: false,
+      httpStatus: 200,
+    });
+    const signer = { address: ADDR, privKey: PK_ONE };
+    await expect(
+      runReferenceCycle(1, env.base({ client, signer, crashAfter: 'acked_written' })),
+    ).rejects.toBeInstanceOf(CrashSimulationError);
+
+    // Redémarrage : état ET ledger rechargés DEPUIS LE DISQUE.
+    const store = new DurableStateStore(env.statePath);
+    const ledger2 = FileLedger.load(join(env.dir, 'ledger.json'));
+    const acked = store.read().orders[0];
+    expect(acked.status).toBe('ACKED');
+    expect(acked.order_id).toBe('order-real-1');
+    // L'état est vrai, mais la trace ledger manque encore : c'est la fenêtre D.
+    expect(ledger2.entries.some((e) => e.event === 'execution_success')).toBe(false);
+
+    const r1 = await reconcileStateLedger(store, ledger2);
+    expect(r1.repaired).toBe(1);
+    const rep = ledger2.entries.find(
+      (e) => e.event === 'execution_success' && (e.payload as { orderId?: string }).orderId === 'order-real-1',
+    );
+    expect(rep).toBeDefined();
+    expect((rep!.payload as { recovered_at_restart?: boolean }).recovered_at_restart).toBe(true);
+    expect(ledger2.verify().valid).toBe(true); // la chaîne reste intègre après rattrapage
+
+    // IDEMPOTENCE : un second rattrapage n'ajoute AUCUNE entrée.
+    const r2 = await reconcileStateLedger(
+      new DurableStateStore(env.statePath),
+      FileLedger.load(join(env.dir, 'ledger.json')),
+    );
+    expect(r2.repaired).toBe(0);
   });
 });

@@ -23,9 +23,16 @@ export function renderDashboard(snapshot: ObservatorySnapshot): string {
   const warnings = snapshot.warnings.length ? `<div class="warnings">${snapshot.warnings.map((warning) => badge(warning, 'warning')).join('')}</div>` : '';
   return `${warnings}
   <section class="panel system"><header><h2>SYSTEM</h2>${badge(snapshot.system.mode, 'dry-run')}</header>
-    <div class="identity"><strong>PALLAS</strong><span>APP v${esc(snapshot.system.version)} · AUDIT BASELINE v0.3 · ${esc(snapshot.system.commit ?? 'COMMIT UNKNOWN')}</span></div>
+    <div class="identity"><strong>PALLAS</strong><span>APP v${esc(snapshot.system.version)} · AUDIT BASELINE ${esc(snapshot.system.baseline.tag ?? 'UNKNOWN')} · BASELINE COMMIT ${esc(snapshot.system.baseline.commit ?? 'UNKNOWN')} · HEAD ${esc(snapshot.system.commit ?? 'UNKNOWN')}</span></div>
     <div class="pipeline"><span>MARKET</span><i>→</i><span>SIGNAL</span><i>→</i><span>RISK</span><i>→</i><strong>${esc(execution)}</strong><i>→</i><span>LEDGER</span></div>
     <dl><div><dt>REFERENCE LOOP</dt><dd>${badge(snapshot.system.loop, snapshot.system.loop === 'RUNNING' ? 'allow' : snapshot.system.loop === 'STOPPED' ? 'neutral' : 'warning')}</dd></div><div><dt>LAST EVENT AGE</dt><dd>${snapshot.system.loopAgeSeconds === null ? 'UNKNOWN' : `${snapshot.system.loopAgeSeconds}s`}</dd></div><div><dt>LEDGER</dt><dd>${badge(snapshot.system.ledger)}${ledgerSignedBadge(snapshot.system.ledgerSigned)}</dd></div><div><dt>ENTRIES</dt><dd>${snapshot.system.ledgerEntries}</dd></div><div><dt>LAST EVENT</dt><dd>${esc(snapshot.system.lastEventAt)}</dd></div></dl>
+  </section>
+  <section class="panel campaign"><header><h2>CAMPAGNE</h2>${badge(snapshot.campaign.status, snapshot.campaign.status === 'ACTIVE' ? 'allow' : snapshot.campaign.status === 'INVALID' ? 'reject' : 'neutral')}</header>
+    <dl class="metrics"><div><dt>CT ID</dt><dd>${esc(snapshot.campaign.id)}</dd></div><div><dt>STARTED</dt><dd>${esc(snapshot.campaign.startedAt)}</dd></div><div><dt>PROGRESS</dt><dd>${snapshot.campaign.elapsedMinutes === null ? 'UNKNOWN' : `${snapshot.campaign.elapsedMinutes} / ${snapshot.campaign.targetMinutes ?? 'UNKNOWN'} min`}</dd></div><div><dt>CHECKPOINTS SIGNED</dt><dd>${snapshot.campaign.checkpointsSigned}</dd></div><div><dt>LAST CHECKPOINT</dt><dd>${badge(snapshot.campaign.lastCheckpoint, snapshot.campaign.lastCheckpoint === 'VERIFIED' ? 'allow' : snapshot.campaign.lastCheckpoint === 'INVALID' ? 'reject' : 'neutral')}</dd></div><div><dt>NETWORK CALLS / CYCLE</dt><dd>${value(snapshot.campaign.networkCallsPerCycle, 3)}</dd></div></dl>
+    <p class="timestamp">LAST UPDATE ${esc(snapshot.campaign.updatedAt)}</p>
+  </section>
+  <section class="panel kill-switch"><header><h2>KILL SWITCH</h2>${badge(snapshot.killSwitch.engaged === null ? 'UNKNOWN' : snapshot.killSwitch.engaged ? 'ENGAGED' : 'NOT ENGAGED', snapshot.killSwitch.engaged ? 'reject' : snapshot.killSwitch.engaged === false ? 'allow' : 'warning')}</header>
+    <dl><div><dt>SOURCE</dt><dd>${esc(snapshot.killSwitch.source)}</dd></div></dl>
   </section>
   <section class="panel state"><header><h2>DURABILITY · STATE</h2>${badge(caseLabel(snapshot.durability.format, snapshot.durability.integrity))}${snapshot.durability.killSwitchEngaged ? badge('KILL SWITCH', 'reject') : ''}</header>
     <dl class="metrics">

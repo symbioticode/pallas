@@ -35,6 +35,12 @@ limites sont documentées ci-dessous et dans les rapports de mission `docs/missi
 | CI actions SHA-pinnées + job couverture avec seuils | ✔ | M20 |
 | Alertes CRITICAL structurées (JSONL + webhook) sur les anomalies de l'audit | ✔ | M20 |
 | Objectifs RTO ≤ 15 min / RPO ≤ 1 cycle documentés | ✔ | M20 |
+| Réconciliation par fills réels (jamais « cancelled » par simple absence) + exposition alimentée par l'exchange | ✔ (limites documentées) | M22 |
+| Verrou interprocessus à propriétaire (PID + vivacité) + rattrapage état↔ledger au démarrage | ✔ (limites documentées) | M23 |
+| Ledger signé OBLIGATOIRE par défaut (mode supervised) ; dev explicite et bruyant | ✔ | M24 |
+| Kill switch hors API publique + autorité externe (fichier) + injection restreinte | ✔ | M25 |
+| STATE_CORRUPT/LEDGER_CORRUPT émis au point de détection + alertes webhook avec retry et backlog détectable | ✔ (best-effort assumé) | M26 |
+| Garde de permissions des secrets obligatoire (test de convention) + rotation reproductible versionnée | ✔ (testnet non disponible, documenté) | M28 |
 
 ## Sandbox bwrap (phase 1.3) — portée réelle de la protection
 
@@ -239,3 +245,223 @@ fait l'objet d'une alerte JSONL (`AMBIGUOUS_ORDER`, `RECONCILE_FAILED`, `KILL_SW
 Ces objectifs ne sont **pas** garantis par contrat de service : pas de réplication, pas de
 rene-match. Ce sont des cibles de conception vérifiables par les tests (corruption → fail-stop →
 alerte) et le runbook, pas des SLIs contraignants.
+
+## Custody : garde des secrets obligatoire + rotation reproductible (PALLAS-M28)
+
+### La garde n'est plus optionnelle
+
+`loadPolymarketSecretsFromFile` applique `assertFilePermissions` (0600 ou plus strict) **avant** la
+lecture du vault. Un **test de convention** (`secrets-guard-convention.test.ts`) échoue si un
+nouveau point de chargement de secret contourne la garde :
+- `decryptPolymarketSecrets` et `PALLAS_POLYMARKET_VAULT` ne sont référencés que par
+  `packages/execution/src/polymarketSecrets.ts` (aucun autre fichier de PRODUCTION) ;
+- le chargeur fichier appelle `assertFilePermissions` AVANT `readFile` (ordre vérifié) ;
+- le seul fichier de production référençant `loadPolymarketSecrets` est le module garde.
+
+**Absence explicite** : aucun chemin de production ne charge aujourd'hui de secrets réels
+(l'orchestrateur tourne en dry-run avec un signataire éphémère). Le test ci-dessus échouera dès
+qu'un chemin live sera ajouté s'il ne passe pas par la garde — l'oubli devient impossible à
+merger silencieusement.
+
+### Rotation reproductible, sans secret réel
+
+`scripts/rotate-credentials.mjs` (VERSIONNÉ dans le dépôt) génère des credentials de TEST à la
+volée (`randomBytes`), chiffre un vault v2, effectue la rotation (re-chiffrement avec une NOUVELLE
+passphrase), vérifie que l'ancienne passphrase n'ouvre plus le nouveau vault, applique `0600`, et
+**rapporte sans ambiguïté** si un testnet a réellement été utilisé. Aucune valeur de secret n'est
+imprimée (empreintes SHA-256 tronquées seulement).
+
+### Statut réel vs simulé (honnête)
+
+Aucun **testnet CLOB Polymarket officiel** n'est connu ; la dérivation/révocation réelle n'a donc
+pas été exécutée. Le script rapporte `network.status = "skipped"` — il ne présente JAMAIS une
+simulation locale comme une exécution réelle. Un opérateur disposant d'un accès lance
+`PALLAS_ROTATION_LIVE=1 PALLAS_ROTATION_BASE_URL=... PALLAS_TESTNET_PRIVKEY=... node
+scripts/rotate-credentials.mjs` : la dérivation réelle sera alors exécutée et sa réponse
+rapportée.
+
+**Limites assumées** (inchangées depuis M05/M19) : les secrets déchiffrés vivent en clair dans le
+tas JS (non effaçables) ; pas de KMS ni de séparation de process ; secrets et wallet dans le même
+process. Voir § « séparation signature/dérivation ».
+
+## Livraison des alertes — garantie réelle (PALLAS-M26)
+
+### Détection au bon endroit
+
+`STATE_CORRUPT` et `LEDGER_CORRUPT` sont émis au POINT DE DÉTECTION RÉEL — la lecture — et non plus
+seulement au chargement de démarrage :
+- `DurableStateStore.read()` émet `STATE_CORRUPT` avant chaque `throw` fail-stop (JSON invalide,
+  schéma hors contrat, checksum incohérent) ; l'alerte ne dépend donc plus de l'appelant.
+- `FileLedger.readChain()` émet `LEDGER_CORRUPT` pour toute corruption détectée à la lecture
+  (y compris lors d'un `append`, pas seulement au `load` initial).
+
+Les trois autres anomalies étaient déjà correctement câblées : `AMBIGUOUS_ORDER` (catch
+`AmbiguousOrderError`), `RECONCILE_FAILED` (échec de réconciliation de scope / post-ambiguïté),
+`KILL_SWITCH` (à l'engagement effectif).
+
+### Acheminement — ce qui est RÉELLEMENT garanti
+
+| Élément | Garantie |
+|---|---|
+| Persistance locale | la ligne CRITICAL est écrite en JSONL **avant** toute tentative réseau ; c'est la seule garantie forte (durable tant que le disque l'est) |
+| Webhook | **best-effort** avec retry borné (défaut 2 tentatives supplémentaires, backoff exponentiel ; `PALLAS_ALERT_WEBHOOK_RETRIES`, `PALLAS_ALERT_RETRY_BACKOFF_MS`) |
+| Échec final du webhook | une ligne `WARN` `ALERT_DELIVERY_FAILED` est ajoutée au **même** JSONL : un lecteur externe peut détecter un **backlog** d'alertes non acquittées |
+
+**Non garanti, explicitement** : pas d'accusé de réception, pas de queue persistante, pas de
+reprise après redémarrage des livraisons en échec, aucune garantie de livraison distante forte. On
+ne présente pas ce mécanisme comme plus robuste qu'il ne l'est : il est « au moins écrit localement,
+webhook best-effort avec retry borné ».
+
+## Kill switch : hors surface publique et autorité indépendante du process (PALLAS-M25)
+
+Réserve répétée de l'audit v0.4 (F-06) : `setGlobalKillSwitch` était **publiquement exporté** par
+`@pallas/execution` (n'importe quel code du même process pouvait désengager la dernière ligne de
+défense), et l'injection `isKillSwitchEngaged` du client n'était **pas restreinte** contrairement à
+`isDryRun`.
+
+### Ce qui change
+
+1. **Plus d'export public du désengagement.** L'entrée `@pallas/execution` n'expose que la LECTURE
+   (`getGlobalKillSwitch`, `isKillSwitchFileEngaged`, `killSwitchFilePath`) et l'erreur
+   `KillSwitchEngagedError`. `setGlobalKillSwitch` n'est accessible que par le sous-chemin
+   **RÉSERVÉ et documenté** `@pallas/execution/kill-switch-authority`, utilisé par le seul
+   orchestrateur propriétaire de l'état durable. La carte `exports` du paquet bloque tout autre
+   chemin profond (pas de ré-export indirect atteignable).
+2. **Injection restreinte comme `isDryRun`.** Fournir `isKillSwitchEngaged` hors
+   `PALLAS_TEST_MODE=1` lève une erreur au constructeur — un chemin de production standard ne peut
+   plus fixer l'autorité de kill switch par injection.
+3. **Autorité EXTERNE au process.** La PRÉSENCE du fichier-drapeau
+   `<PALLAS_KILL_SWITCH_FILE | .pallas/KILL>` engage le kill switch, vérifiée à chaque appel de
+   `getGlobalKillSwitch`. Un désengagement en mémoire (`setGlobalKillSwitch(false)`) n'annule PAS
+   un fichier présent : l'opérateur peut arrêter l'émission sans code, et un composant interne ne
+   peut pas « effacer » l'arrêt par un simple appel de fonction.
+
+### Décision : pas de service séparé
+
+Un service de kill switch hors process (RPC dédié, autorité distante) n'est pas implémenté à ce
+stade : le fichier-drapeau ferme déjà la propriété centrale (« aucun code du même process ne peut
+désengager silencieusement ») sans nouvelle infrastructure. **Limite résiduelle nommée** : un
+attaquant ayant déjà l'exécution de code ET l'écriture disque peut supprimer le fichier — mais il
+peut alors aussi tuer le process, modifier le ledger ou les clés ; le service séparé ne relèverait
+que d'un modèle de menace post-compromission. Un service dédié reste une piste si le multi-hôte
+devient un besoin réel.
+
+## Ledger signé obligatoire par défaut — mode supervised vs dev (PALLAS-M24)
+
+Le finding F-05 de l'audit v0.4 : sans clé publique ni checkpoint, le ledger non signé était
+accepté **silencieusement** — la protection de PALLAS-M16 était une capacité OPTIONNELLE, pas une
+garantie par défaut. Un déploiement qui oubliait la clé publique perdait toute détection de
+falsification sans aucun signal.
+
+FileLedger.load distingue désormais DEUX modes (resolveLedgerMode) :
+
+| Mode | Déclenchement | Comportement |
+|---|---|---|
+| **supervised** (défaut) | aucun marqueur | la clé publique Ed25519 est **obligatoire** ; son absence est **FATALE** au démarrage |
+| **dev** | PALLAS_LEDGER_MODE=dev (ou PALLAS_TEST_MODE=1 en test) | ledger non signé **accepté** mais **avertissement bruyant** (console.warn) ; l'Observatory affiche LEDGER UNSIGNED |
+
+Priorité de résolution : argument explicite mode > PALLAS_LEDGER_MODE > PALLAS_TEST_MODE=1 (tests)
+> défaut supervised. Une valeur de PALLAS_LEDGER_MODE non reconnue **n'est pas devinée** : erreur
+explicite. Le mode dev reste donc utilisable localement, mais il faut le DEMANDER.
+
+### Précision sur ce que chaque contrôle prouve
+
+- **Ancrage** (index/hash de la tête signée toujours présent dans la chaîne) : vérifié quel que
+  soit le mode ET sans clé publique. Il détecte une chaîne tronquée ou réécrite après signature —
+  mais ce n'est **pas** une preuve cryptographique.
+- **Signature Ed25519** : vérifiée UNIQUEMENT quand la clé publique est fournie. C'est la seule
+  preuve cryptographique, et elle est désormais obligatoire en mode supervised.
+
+### Ancrage distant — limite assumée
+
+Aucun ancrage externe au process (publication périodique du hash de tête vers un service tiers ou
+un log syslog/webhook hors machine) n'est implémenté dans PALLAS-M24. Conséquence explicite : un
+attaquant qui contrôle À LA FOIS le ledger ET la clé privée de signature n'est arrêté par rien. La
+limite est nommée, pas dissimulée ; un ancrage distant reste une piste ouverte.
+
+## Transaction état+ledger et verrou à propriétaire (PALLAS-M23)
+
+### Choix d'architecture : deux fichiers séparés + rattrapage idempotent
+
+L'état (snapshot checksummé, `DurableStateStore`) et le ledger (chaîne append-only
+signée, `FileLedger`) restent DEUX fichiers. Ce choix est acté : formats et lecteurs
+différents (état = dernier connu, ledger = historique immuable ; l'Observatory lit le ledger sans
+charger l'état). Plutôt qu'une fusion risquée ou un outbox complet (bump de version d'état), la
+cohérence est obtenue par une **réconciliation de démarrage** : `reconcileStateLedger(store, ledger)`
+détecte tout ordre `ACKED` dont le `correlation_id` n'apparaît dans aucune entrée
+`execution_success`, et émet une entrée de rattrapage. L'opération est IDEMPOTENTE (une entrée
+déjà présente n'est jamais dupliquée) et tourne avant toute décision de cycle.
+
+**Fenêtre résiduelle assumée** : entre le crash et le prochain démarrage, le ledger ne porte pas
+encore la trace — mais l'état n'est jamais faux (écrit DURABLEMENT avant l'appel réseau, PALLAS-M13)
+et aucune ré-émission n'est possible sur ce `correlationId` (empreinte ACKED → gate de scope
+M14). Cette fenêtre est bornée par le redémarrage, pas par un timeout.
+
+### Verrou : propriétaire + vérification de vivacité
+
+`packages/core/src/file-lock.ts` écrit un `owner.json` (pid, hostname, sessionId,`
+startedAt`) à l'acquisition et, avant toute reprise après `staleMs`, vérifie que le
+détenteur est RÉELLEMENT MORT (signal 0). Un détenteur vivant mais LENT (validation ou E/S longue)
+ne peut donc plus se faire voler son verrou sur le seul âge du répertoire : il attend, ou la
+tentative échoue proprement (`FileLockError`), sans double writer.
+
+**Limites assumées** : la vivacité par PID n'a de sens que sur le même hôte (verrou LOCAL — un
+déploiement multi-hôte retomberait sur le seul critère d'âge) ; la reprise `unlink+rmdir` n'est
+pas atomique (fenêtre étroite de course entre repreneurs, à fermer par un bail transactionnel si
+le multi-hôte devient un besoin réel). Ces limites sont nommées, pas dissimulées.
+
+## Réconciliation par fills réels et exposition (PALLAS-M22)
+
+Le finding le plus grave de l'audit v0.4 (F-03/F-04) : sans `order_id` connu, la réconciliation
+n'interrogeait que les ordres OUVERTS. Or un ordre TOTALEMENT REMPLI disparaît précisément de cette
+liste — il était donc conclu « annulé », le gate de scope (M14) se libérait, et Pallas pouvait
+doubler une position déjà prise. La lecture des seuls ordres ouverts est structurellement
+insuffisante, comme le documente Polymarket (réconcilier ordres ouverts **et** trades résultants).
+
+### Correctif : la preuve positive prime, l'absence ne conclut plus seule
+
+GET /data/trades (CLOB, auth L2, `maker_address` requis ; endpoint vérifié sur l'OpenAPI
+officiel `/api-spec/clob-openapi.yaml`, schéma `Trade`) fournit l'historique des fills.
+La convergence de `reconcileOrder` a désormais TROIS issues :
+
+| Preuve | Conclusion |
+|---|---|
+| Ordre ouvert chez l'exchange (scan `/data/orders`) | `ACKED` — empreinte vivante, scope bloqué |
+| Fill(s) totalisant la quantité (`/data/trades`) | `TERMINAL/filled` — position réelle, comptée dans l'exposition |
+| Fill(s) partiels (< quantité) | `ACKED` — reste vivant, scope bloqué (jamais `filled`, jamais `cancelled`) |
+| Absent des ordres ouverts ET des trades, **les deux sources ayant répondu** | `TERMINAL/cancelled` — seule condition légitime |
+| Une source en erreur, ou fenêtre d'observation trop courte (< 60 s) | **reste `RECONCILING`**, le scope reste bloqué |
+
+Aucun chemin de code ne conclut plus `cancelled` sur la seule absence d'un signal. Un `order_id`
+que l'exchange déclare explicitement inconnu (HTTP 404 sur `/data/order/{id}`) est une preuve
+positive d'inexistence et autorise la conclusion immédiate ; l'absence sur un id JAMAIS connu exige
+que la fenêtre d'observation soit écoulée (constante `MIN_ABSENT_CANCEL_AGE_MS` = 60 s). Jamais de
+timeout qui libérerait le scope faute de conclusion.
+
+### Exposition — alimentée par l'exchange, limites assumées
+
+`exposureFromOrders` compte les positions `filled` reconnues par les trades et les ordres
+ouverts confirmés par l'exchange. **Limites résiduelles, non dissimulées** :
+- il n'existe PAS d'endpoint CLOB renvoyant une position consolidée par marché ; `/balance-allowance`
+  donne solde/allowances par token, pas un notionnel USD par marché ;
+- pour un ordre non encore réconcilié, l'exposition reste dérivée de la machine d'états locale ;
+- le schéma ne porte pas de quantité remplie : un remplissage partiel compte pour son notionnel
+  plein (sur-évaluation conservatrice, jamais de sous-évaluation).
+
+Ces limites interdisent de qualifier l'exposition de « réelle » ou « complète » : elle est
+« alimentée par l'exchange dans la mesure des endpoints disponibles ».
+
+## Chaîne d'audits — traçabilité (PALLAS-M21)
+
+Les rapports `docs/AUDIT-PALLAS-v*.md` (v0.1 → v0.4) sont désormais **suivis par git** : la règle
+d'exclusion `docs/AUDIT-PALLAS*.md` a été retirée du `.gitignore` en PALLAS-M21. Décision et
+motif :
+
+- la finalisation s'appuie sur une **chaîne d'audits comparés dans le temps** (v0.2.1 → v0.3 →
+  v0.4) ; un rapport non versionné n'est pas reconstructible sans la copie locale de son auteur ;
+- l'état antérieur était incohérent : `v0.1` était déjà suivi (ajouté avant la règle d'exclusion),
+  alors que `v0.2`, `v0.2.1`, `v0.3` et `v0.4` ne l'étaient pas ;
+- chaque rapport référence le commit HEAD de son époque, ce qui permet de confronter un verdict à
+  l'arbre exact qu'il a jugé (chaîne de provenance).
+
+Seul `.pallas/` (état/ledger local) reste volontairement hors git.

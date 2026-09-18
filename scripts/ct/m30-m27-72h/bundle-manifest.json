@@ -1,0 +1,25 @@
+{
+  "bundle_id": "CT-2026-020",
+  "mission": "PALLAS-M30",
+  "purpose": "M27 observation 72h after M30 corrections",
+  "status": "PREPARED_NOT_LAUNCHED",
+  "code_base_commit": "8ffc8aa550b60d62d352dc5b056f1a38fc034aba",
+  "test_evidence": {
+    "npm": { "passed": 304, "failed": 0, "skipped": 4, "total": 308 },
+    "cargo": { "passed": 65, "failed": 0 },
+    "clippy": "passed",
+    "environment_note": "Valeurs historiques de M30 : les 4 tests d'isolation bwrap etaient indisponibles sur cet hote. Le rejeu du gel sur un hote avec netns donne 308 passed, 0 failed, 0 skipped ; voir docs/AUDIT-PALLAS-v0.6.md."
+  },
+  "artifacts": {
+    "scripts/m27-72h-run.mjs": "c3f606a0b7f9bef0edb065e697e108a6dfeb25ea3422577764f6914996c8e7aa",
+    "scripts/observation-campaign.mjs": "6eeae8fd5071341977376ca9571af203bb3212bd941a710251d795f88b209b1b",
+    "packages/ledger/dist/file-ledger.js": "ffb93e7891f9977616dd56d22f8525717fd503cc4fb629100539be17c69857f8",
+    "packages/ledger/dist/ledger-signing.js": "8af7c6c1fd470070c171a187f3eb891b79feff9714a11239669b2a5906f9391e",
+    "packages/execution/dist/dryRun.js": "17b373435108937fdee0927ed3665ec6b849f9610653fb752d0db4117be65f05",
+    "packages/execution/dist/polymarketClient.js": "03310a03bd416c0f01283894db8871c055cd4f76c7ab7b41f550767f21548a2f",
+    "packages/strategy/dist/run-reference-loop.js": "ce90f2af587b9313807b21538fa6ce2c5691cb67571f07d948b50c5552b349df",
+    "crates/risk-engine/target/debug/risk-engine": "49a1db4e7766feb283c0b5d62b48d664922bc784351b466a8a459326eebcafd1"
+  },
+  "supersedes": "CT-2026-019",
+  "launch_authorized": false
+}

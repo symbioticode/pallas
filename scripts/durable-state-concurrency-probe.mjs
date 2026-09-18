@@ -19,8 +19,9 @@
  */
 
 import { DurableStateStore, newLifecycle } from '@pallas/strategy';
+import { writeFileSync } from 'node:fs';
 
-const [, , statePath, iterationsRaw] = process.argv;
+const [, , statePath, iterationsRaw, resultPath] = process.argv;
 if (!statePath || !iterationsRaw) {
   console.error('usage: node scripts/durable-state-concurrency-probe.mjs <statePath> <iterations>');
   process.exit(2);
@@ -46,4 +47,6 @@ for (let i = 0; i < iterations; i += 1) {
   });
 }
 
-console.log(JSON.stringify({ pid: process.pid, iterations, orders_after_my_turn: n }));
+const result = JSON.stringify({ pid: process.pid, iterations, orders_after_my_turn: n });
+if (resultPath) writeFileSync(resultPath, result + '\n', 'utf8');
+console.log(result);

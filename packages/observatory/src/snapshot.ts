@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import type { ObservatoryRecord, ObservatorySnapshot } from './types.js';
@@ -24,6 +24,11 @@ export interface SnapshotOptions {
   loopStatusPath?: string;
   /** Chemin du fichier JSONL d'alertes (`.pallas/alerts.jsonl`) — lu en lecture seule. */
   alertPath?: string;
+  baselinePath?: string;
+  campaignPointerPath?: string;
+  campaignStatePath?: string;
+  networkCostPath?: string;
+  killFilePath?: string;
 }
 
 function canonicalJson(value: unknown): string {
@@ -231,6 +236,60 @@ export function resolveCommit(rootDir: string): string | null {
   try { return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: rootDir, encoding: 'utf8', timeout: 1_000 }).trim() || null; } catch { return null; }
 }
 
+export function resolveBaseline(rootDir: string, metadataPath = resolve(rootDir, 'docs/mvp/BASELINE-FREEZE.md')): ObservatorySnapshot['system']['baseline'] {
+  try {
+    const text = readFileSync(metadataPath, 'utf8');
+    const tag = text.match(/tag (?:annoté )?`([^`]+)`/i)?.[1] ?? null;
+    if (!tag) return { tag: null, commit: null };
+    const commit = execFileSync('git', ['rev-parse', `${tag}^{commit}`], { cwd: rootDir, encoding: 'utf8', timeout: 1_000 }).trim();
+    return { tag, commit: commit || null };
+  } catch { return { tag: null, commit: null }; }
+}
+
+function readJsonLines(path: string): Record<string, unknown>[] {
+  try {
+    return readFileSync(path, 'utf8').split('\n').filter((line) => line.trim()).map((line) => object(JSON.parse(line))).filter((row): row is Record<string, unknown> => row !== null);
+  } catch { return []; }
+}
+
+function readCampaign(options: SnapshotOptions, now: Date): ObservatorySnapshot['campaign'] {
+  const unknown: ObservatorySnapshot['campaign'] = { status: 'UNKNOWN', id: null, startedAt: null, elapsedMinutes: null, targetMinutes: null, checkpointsSigned: 0, lastCheckpoint: 'ABSENT', updatedAt: null, networkCallsPerCycle: null };
+  try {
+    const pallasDir = resolve(options.rootDir, '.pallas');
+    const pointer = readFileSync(options.campaignPointerPath ?? resolve(pallasDir, 'm27-72h-current'), 'utf8').trim();
+    const campaignDir = resolve(options.rootDir, pointer);
+    if (!(campaignDir === pallasDir || campaignDir.startsWith(`${pallasDir}/`))) return { ...unknown, status: 'INVALID' };
+    const manifest = readObject(resolve(campaignDir, 'manifest.json'));
+    if (!manifest || typeof manifest['started_at'] !== 'string' || finite(manifest['target_minutes']) === null) return { ...unknown, status: 'INVALID' };
+    const summary = readObject(resolve(campaignDir, 'summary.json'));
+    const complete = existsSync(resolve(campaignDir, 'COMPLETE')) || summary !== null;
+    const checkpoints = readJsonLines(resolve(campaignDir, 'checkpoints.jsonl'));
+    const lastCheckpoint = checkpoints.at(-1);
+    const stateDoc = readObject(options.campaignStatePath ?? resolve(pallasDir, 'ct-020-r1-state-snapshot.json'));
+    const ctState = object(stateDoc?.['state']);
+    const costs = readJsonLines(options.networkCostPath ?? resolve(pallasDir, 'm32-network-cost.jsonl'))
+      .filter((row) => typeof row['campaign'] === 'string' && resolve(String(row['campaign'])) === campaignDir);
+    const cost = costs.at(-1);
+    const scopes = finite(cost?.['reconcile_scopes']);
+    const calls = finite(cost?.['getOpenOrders_getTrades_calls']);
+    const startedAt = String(manifest['started_at']);
+    const startedMs = Date.parse(startedAt);
+    if (!Number.isFinite(startedMs)) return { ...unknown, status: 'INVALID' };
+    const endedAt = typeof summary?.['ended_at'] === 'string' ? summary['ended_at'] : null;
+    const updateCandidates = [lastCheckpoint?.['at'], cost?.['at'], endedAt, startedAt]
+      .filter((value): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value)))
+      .sort((a, b) => Date.parse(b) - Date.parse(a));
+    const updatedAt = updateCandidates[0] ?? null;
+    return {
+      status: complete ? 'COMPLETE' : 'ACTIVE', id: typeof ctState?.['ct_id'] === 'string' ? ctState['ct_id'] : null, startedAt,
+      elapsedMinutes: Math.max(0, Math.floor(((endedAt && Number.isFinite(Date.parse(endedAt)) ? Date.parse(endedAt) : now.getTime()) - startedMs) / 60_000)),
+      targetMinutes: finite(manifest['target_minutes']), checkpointsSigned: checkpoints.length,
+      lastCheckpoint: !lastCheckpoint ? 'ABSENT' : lastCheckpoint['verified_load'] === true ? 'VERIFIED' : 'INVALID', updatedAt,
+      networkCallsPerCycle: scopes !== null && scopes > 0 && calls !== null ? calls / scopes : null,
+    };
+  } catch { return unknown; }
+}
+
 /**
  * PALLAS-M20 — lit les dernières alertes CRITICAL émises par @pallas/core
  * (JSONL `.pallas/alerts.jsonl`). Lecture seule du fichier partagé, jamais
@@ -263,6 +322,8 @@ export async function buildSnapshot(options: SnapshotOptions): Promise<Observato
   const durability = readDurableState(options.riskStatePath ?? resolve(options.rootDir, '.pallas/risk-state.json'));
   const state = durability.risk;
   const loopStatus = readObject(options.loopStatusPath ?? resolve(options.rootDir, '.pallas/observatory-loop.json'));
+  const campaign = readCampaign(options, now);
+  const killFilePresent = existsSync(options.killFilePath ?? resolve(options.rootDir, '.pallas/KILL'));
   const entries = ledger.entries;
   // Un ledger invalide reste inspectable dans ACTIVITY, mais ne devient jamais
   // une source d'autorité pour les panneaux strategy/risk/system.
@@ -320,8 +381,12 @@ export async function buildSnapshot(options: SnapshotOptions): Promise<Observato
     : reportedLoop === 'stopped' ? 'STOPPED' : loopAgeSeconds !== null && loopAgeSeconds > 10 ? 'STALE' : 'UNKNOWN';
   const snapshot: ObservatorySnapshot = {
     generatedAt: now.toISOString(),
-    system: { name: 'PALLAS', version: options.version ?? '0.1.0', commit: options.commit === undefined ? resolveCommit(options.rootDir) : options.commit,
+    system: { name: 'PALLAS', version: options.version ?? '0.2.0', commit: options.commit === undefined ? resolveCommit(options.rootDir) : options.commit,
+      baseline: resolveBaseline(options.rootDir, options.baselinePath),
       mode: 'DRY RUN', ledger: ledger.status, ledgerSigned: ledger.signed, ledgerEntries: entries.length, lastEventAt, loop, loopAgeSeconds },
+    campaign,
+    killSwitch: { engaged: durability.killSwitchEngaged === null && !killFilePresent ? null : Boolean(durability.killSwitchEngaged || killFilePresent),
+      source: durability.killSwitchEngaged && killFilePresent ? 'BOTH' : durability.killSwitchEngaged ? 'DURABLE_STATE' : killFilePresent ? 'KILL_FILE' : durability.killSwitchEngaged === false ? 'NONE' : 'UNKNOWN' },
     durability: {
       format: durability.format,
       integrity: durability.integrity,

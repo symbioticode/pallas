@@ -58,9 +58,10 @@ DECIDED→SUBMITTING→AMBIGUOUS/ACKED→TERMINAL) et le module `reconciliation.
 - **Côté risk engine** (port `KILL_SWITCH`, `pipeline.rs`) : toute nouvelle décision est rejetée.
 - **Côté point d'émission** (`KillSwitchEngagedError` dans `placeOrder`) : aucune émission ne part,
   même si un appelant contournait le risk engine (défense en profondeur).
-- À l'engagement (persisté dans l'état durable), l'orchestrateur déclenche **un `cancelAllOrders()`
-  réel** (idempotent via `meta.kill_switch_cancelall_called` — jamais deux fois pour un même
-  engagement), pas seulement un blocage des décisions futures.
+- À l'engagement (état durable ou fichier externe), l'orchestrateur vérifie le kill switch à
+  **chaque cycle** et déclenche un `cancelAllOrders()` réel. Le marqueur durable garantit un seul
+  appel pendant un engagement continu ; un cycle observant le désengagement réarme le prochain
+  dépôt du fichier KILL.
 
 ### `cancelOrder` — DELETE idempotent
 

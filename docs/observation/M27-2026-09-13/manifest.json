@@ -1,0 +1,16 @@
+{
+  "event": "campaign_manifest",
+  "started_at": "2026-09-13T01:29:04.215Z",
+  "target_minutes": 12,
+  "interval_ms": 5000,
+  "monitor_ms": 5000,
+  "incident_injection": true,
+  "token": "4764842916462157287738418815193165769775706842468360015637456523413749678364",
+  "dir": "/home/andrei/Projects/80_PALLAS/pallas/.pallas/campaign-M27-demo",
+  "ledger_path": "/home/andrei/Projects/80_PALLAS/pallas/.pallas/campaign-M27-demo/.pallas/ledger.json",
+  "state_path": "/home/andrei/Projects/80_PALLAS/pallas/.pallas/campaign-M27-demo/.pallas/risk-state.json",
+  "dry_run_verified": true,
+  "git_commit": "11089855d044b1c31f9931cf3cba230bb2c614a0",
+  "node": "v22.23.2",
+  "risk_bin": "/home/andrei/Projects/80_PALLAS/pallas/crates/risk-engine/target/debug/risk-engine"
+}
