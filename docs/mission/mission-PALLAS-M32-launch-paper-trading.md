@@ -5,7 +5,8 @@ Mission ID : PALLAS-M32
 Date de création : 2026-09-13
 Auteur / Agent : Claude (synthèse d'AUDIT-PALLAS-v0.6) — exécution par Codex
 Projet : Pallas
-Statut : ACTIF
+Statut : TERMINÉE — campagne gouvernée ≥72 h achevée le 2026-09-17 à 01:30 EDT ; rapport factuel
+dans `docs/OBSERVATION-M27-72h-2026-09-14.md`
 Dépend de : tag `pallas-mvp-freeze-1` (commit `e69d7542f79ff3e6a24df60773147a6a2f400986`),
 `AUDIT-PALLAS-v0.6.md` (GO paper trading supervisé, conditionnel à R-07)
 Portée : cette mission ne touche PAS au capital réel (NO-GO confirmé, hors périmètre) — uniquement

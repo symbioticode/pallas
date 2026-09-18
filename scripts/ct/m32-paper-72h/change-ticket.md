@@ -1,9 +1,9 @@
-# CT-2026-020-PALLAS — campagne paper trading supervisée 72 h
+# CT-2026-020-PALLAS-R1 — campagne paper trading supervisée 72 h
 
 | Champ | Valeur |
 |---|---|
 | CT interne | `CT-2026-020` (Pallas) |
-| Identifiant global KBM+/runner | `CT-2026-020-PALLAS` |
+| Identifiant global KBM+/runner | `CT-2026-020-PALLAS-R1` |
 | Statut initial | PROPOSED — approbation GPG obligatoire |
 | Risque | Medium |
 | Cible | `nixos`, utilisateur `andrei` |
@@ -19,6 +19,10 @@ CT signé et une unité utilisateur détachée.
 
 L'identifiant global porte le suffixe `-PALLAS`, car `CT-2026-020` a déjà été attribué et archivé
 pour SUBSTRAT-BENCH. Cette qualification évite toute collision de provenance.
+
+La première publication `CT-2026-020-PALLAS` a été invalidée avant exécution : un agent a
+déclenché la signature GPG sans geste humain. La présente révision exige que l'approbateur réalise
+lui-même l'action d'approbation depuis l'interface `/resources/`.
 
 ## Périmètre
 

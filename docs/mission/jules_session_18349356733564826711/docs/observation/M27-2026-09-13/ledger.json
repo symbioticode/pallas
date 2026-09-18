@@ -1,0 +1,3122 @@
+{
+  "root": "pallas",
+  "entries": [
+    {
+      "index": 0,
+      "event": "kill_switch_sync",
+      "timestamp": "2026-09-13T01:29:04.293Z",
+      "payload": {
+        "engaged": false,
+        "cancelAll": "not_needed",
+        "detail": "kill switch not engaged",
+        "elapsed_ms": 0
+      },
+      "prev_hash": "",
+      "hash": "9f7483740456e857856210ae8bb5fca1d2128d241157328dd2d731a67e67426d"
+    },
+    {
+      "index": 1,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:29:04.297Z",
+      "payload": {
+        "cycle": 1
+      },
+      "prev_hash": "9f7483740456e857856210ae8bb5fca1d2128d241157328dd2d731a67e67426d",
+      "hash": "c108a60912cc10515360c33327578f94f3962b550753ecf1ef311411322ab2c9"
+    },
+    {
+      "index": 2,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:29:04.301Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "c108a60912cc10515360c33327578f94f3962b550753ecf1ef311411322ab2c9",
+      "hash": "bfb2d9235f4380fff7f63d9cf871328c104ecde0630880d0039cc55b06a0b95f"
+    },
+    {
+      "index": 3,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:29:05.826Z",
+      "payload": {
+        "cycle": 1,
+        "indicator_ms": 1520
+      },
+      "prev_hash": "bfb2d9235f4380fff7f63d9cf871328c104ecde0630880d0039cc55b06a0b95f",
+      "hash": "60aa75418a695fecc3bc2f52272c89b0f122ae7cf2b022792047482e2ecb5eff"
+    },
+    {
+      "index": 4,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:29:10.839Z",
+      "payload": {
+        "cycle": 2
+      },
+      "prev_hash": "60aa75418a695fecc3bc2f52272c89b0f122ae7cf2b022792047482e2ecb5eff",
+      "hash": "1aff8ed5cfdf7c18d9c48040e78f81a16a0012be35b550546d9a49215d069e90"
+    },
+    {
+      "index": 5,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:29:10.851Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "1aff8ed5cfdf7c18d9c48040e78f81a16a0012be35b550546d9a49215d069e90",
+      "hash": "3c74a6dbefc05a9c13e9ec4c4e471db84296ae085cb66ce5af3ea5015ffd0c76"
+    },
+    {
+      "index": 6,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:29:12.044Z",
+      "payload": {
+        "cycle": 2,
+        "indicator_ms": 1189
+      },
+      "prev_hash": "3c74a6dbefc05a9c13e9ec4c4e471db84296ae085cb66ce5af3ea5015ffd0c76",
+      "hash": "07e3ceba51541bfa2a668e93b7fc883a3075fda0de5bea0fd89ab56db77e06fc"
+    },
+    {
+      "index": 7,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:29:17.048Z",
+      "payload": {
+        "cycle": 3
+      },
+      "prev_hash": "07e3ceba51541bfa2a668e93b7fc883a3075fda0de5bea0fd89ab56db77e06fc",
+      "hash": "66f51f47c687a663f075f2d24d3503c21a47c525f5854c6b3610ceb3717e48c4"
+    },
+    {
+      "index": 8,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:29:17.060Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "66f51f47c687a663f075f2d24d3503c21a47c525f5854c6b3610ceb3717e48c4",
+      "hash": "688dc5b5c522da49e8f13c91ddc4581d300c4655005aab996ec64528f5a608f2"
+    },
+    {
+      "index": 9,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:29:18.745Z",
+      "payload": {
+        "cycle": 3,
+        "indicator_ms": 1681
+      },
+      "prev_hash": "688dc5b5c522da49e8f13c91ddc4581d300c4655005aab996ec64528f5a608f2",
+      "hash": "af966df8602fe2981fd5cbd24c21b134694361769a114a631b43d3ba3ea14c2d"
+    },
+    {
+      "index": 10,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:29:23.759Z",
+      "payload": {
+        "cycle": 4
+      },
+      "prev_hash": "af966df8602fe2981fd5cbd24c21b134694361769a114a631b43d3ba3ea14c2d",
+      "hash": "3db5b745fb1aaefc93a693f1e81a4601136a909ea969867dd6bfc04f7d05f2bb"
+    },
+    {
+      "index": 11,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:29:23.772Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "3db5b745fb1aaefc93a693f1e81a4601136a909ea969867dd6bfc04f7d05f2bb",
+      "hash": "d3ce11527e5158d4c924156117cd9183f44b8dac4d64d430636ea5be262fc760"
+    },
+    {
+      "index": 12,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:29:24.344Z",
+      "payload": {
+        "cycle": 4,
+        "indicator_ms": 568
+      },
+      "prev_hash": "d3ce11527e5158d4c924156117cd9183f44b8dac4d64d430636ea5be262fc760",
+      "hash": "8e094e9938c044d8030026749af4a0597a5c81bec28d28a9524ea0764a637322"
+    },
+    {
+      "index": 13,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:29:29.357Z",
+      "payload": {
+        "cycle": 5
+      },
+      "prev_hash": "8e094e9938c044d8030026749af4a0597a5c81bec28d28a9524ea0764a637322",
+      "hash": "c5fae7bb307bc2e3ed3a0383bf7c8e55075f8bc2eaf0c43105f64933e0a2dc32"
+    },
+    {
+      "index": 14,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:29:29.368Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "c5fae7bb307bc2e3ed3a0383bf7c8e55075f8bc2eaf0c43105f64933e0a2dc32",
+      "hash": "43af59898a50a8a3d06deef2fc294e959506dd7523d04b8875ad99f1fc13b42d"
+    },
+    {
+      "index": 15,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:29:29.723Z",
+      "payload": {
+        "cycle": 5,
+        "indicator_ms": 351
+      },
+      "prev_hash": "43af59898a50a8a3d06deef2fc294e959506dd7523d04b8875ad99f1fc13b42d",
+      "hash": "0942a61ee84aa90630653818440390fe22cacf9c8bc15badf5ebf090949ba626"
+    },
+    {
+      "index": 16,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:29:34.736Z",
+      "payload": {
+        "cycle": 6
+      },
+      "prev_hash": "0942a61ee84aa90630653818440390fe22cacf9c8bc15badf5ebf090949ba626",
+      "hash": "aacb2eaeaa232c372ac634ef60c303ac0655b6359e80f1d4056942ce179bb323"
+    },
+    {
+      "index": 17,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:29:34.749Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "aacb2eaeaa232c372ac634ef60c303ac0655b6359e80f1d4056942ce179bb323",
+      "hash": "8905e1a4f70aaade86fac344f2fd60b51c8695444de1d7a8efda61cd16ed5ff0"
+    },
+    {
+      "index": 18,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:29:37.994Z",
+      "payload": {
+        "cycle": 6,
+        "indicator_ms": 3241
+      },
+      "prev_hash": "8905e1a4f70aaade86fac344f2fd60b51c8695444de1d7a8efda61cd16ed5ff0",
+      "hash": "bbcaef985fbb78eebdf3116a89f921961b5c25d7ec499e3cac6275df9c29b9a6"
+    },
+    {
+      "index": 19,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:29:43.010Z",
+      "payload": {
+        "cycle": 7
+      },
+      "prev_hash": "bbcaef985fbb78eebdf3116a89f921961b5c25d7ec499e3cac6275df9c29b9a6",
+      "hash": "d9f50a81ec027f61a3ba1dd8d22af2fb89d18309d39f36f3c63ae07ff8c877cb"
+    },
+    {
+      "index": 20,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:29:43.013Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "d9f50a81ec027f61a3ba1dd8d22af2fb89d18309d39f36f3c63ae07ff8c877cb",
+      "hash": "dba51a142f74b7d89b240925b0caa0b1ef3659ee5643720823f363d2089d2eb0"
+    },
+    {
+      "index": 21,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:29:44.331Z",
+      "payload": {
+        "cycle": 7,
+        "indicator_ms": 1314
+      },
+      "prev_hash": "dba51a142f74b7d89b240925b0caa0b1ef3659ee5643720823f363d2089d2eb0",
+      "hash": "9e3ddaed9e07d64549fbd2ae13e9add794ddcd30d088c352ec18c279dc3685bc"
+    },
+    {
+      "index": 22,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:29:49.346Z",
+      "payload": {
+        "cycle": 8
+      },
+      "prev_hash": "9e3ddaed9e07d64549fbd2ae13e9add794ddcd30d088c352ec18c279dc3685bc",
+      "hash": "70b9f0e6038b8bd445fdd7d7d7dc9a27eddf30fd63a030249d526cbc0cdc1c77"
+    },
+    {
+      "index": 23,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:29:49.360Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "70b9f0e6038b8bd445fdd7d7d7dc9a27eddf30fd63a030249d526cbc0cdc1c77",
+      "hash": "b7b16c320230a2cb42d435a00a3fb0d70b941a0f546cf55ea750f3894dcfdb2d"
+    },
+    {
+      "index": 24,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:29:50.299Z",
+      "payload": {
+        "cycle": 8,
+        "indicator_ms": 935
+      },
+      "prev_hash": "b7b16c320230a2cb42d435a00a3fb0d70b941a0f546cf55ea750f3894dcfdb2d",
+      "hash": "ed34b80981db04cffbb2e6364ee7f0c982d27700a3fbaffeb0e4a1a9a0060b3f"
+    },
+    {
+      "index": 25,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:29:55.312Z",
+      "payload": {
+        "cycle": 9
+      },
+      "prev_hash": "ed34b80981db04cffbb2e6364ee7f0c982d27700a3fbaffeb0e4a1a9a0060b3f",
+      "hash": "88a64c22e73ba673a0c9bc777f1241faba6d4a6c9d60442f4aadc37c8e5b718a"
+    },
+    {
+      "index": 26,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:29:55.325Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "88a64c22e73ba673a0c9bc777f1241faba6d4a6c9d60442f4aadc37c8e5b718a",
+      "hash": "48ada55a5bf7cba3c64424c1cdcb06fefef359791fe51d2abd86253a2cb3fa9e"
+    },
+    {
+      "index": 27,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:29:56.052Z",
+      "payload": {
+        "cycle": 9,
+        "indicator_ms": 724
+      },
+      "prev_hash": "48ada55a5bf7cba3c64424c1cdcb06fefef359791fe51d2abd86253a2cb3fa9e",
+      "hash": "f145d55de0fbf3bbe56f066bf33a2adfab916c15f51430be88d95b9740b16c1e"
+    },
+    {
+      "index": 28,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:30:01.065Z",
+      "payload": {
+        "cycle": 10
+      },
+      "prev_hash": "f145d55de0fbf3bbe56f066bf33a2adfab916c15f51430be88d95b9740b16c1e",
+      "hash": "8b4665e358959c233da6c861ba2519a9354ad0a002417e76a69b182c545550a6"
+    },
+    {
+      "index": 29,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:30:01.080Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "8b4665e358959c233da6c861ba2519a9354ad0a002417e76a69b182c545550a6",
+      "hash": "f9ddcb8f27778b909d3b815ad697f07ea0db2db31f9d43483057989d685489d8"
+    },
+    {
+      "index": 30,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:30:04.299Z",
+      "payload": {
+        "cycle": 10,
+        "indicator_ms": 3215
+      },
+      "prev_hash": "f9ddcb8f27778b909d3b815ad697f07ea0db2db31f9d43483057989d685489d8",
+      "hash": "d14c84b376221b5b9e5b0e5a2a3637c22940f4c5387616d598918c91c0cd56fe"
+    },
+    {
+      "index": 31,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:30:09.312Z",
+      "payload": {
+        "cycle": 11
+      },
+      "prev_hash": "d14c84b376221b5b9e5b0e5a2a3637c22940f4c5387616d598918c91c0cd56fe",
+      "hash": "de8c076ca59adc9cd27154a8919b8b5c5cc5ee6b79f4bb65cc604a66586431f9"
+    },
+    {
+      "index": 32,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:30:09.325Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "de8c076ca59adc9cd27154a8919b8b5c5cc5ee6b79f4bb65cc604a66586431f9",
+      "hash": "41a23e681aed11c55fc0b1a6d27f22eb699ce755e7a8de94731e702aed7f3e47"
+    },
+    {
+      "index": 33,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:30:12.608Z",
+      "payload": {
+        "cycle": 11,
+        "indicator_ms": 3279
+      },
+      "prev_hash": "41a23e681aed11c55fc0b1a6d27f22eb699ce755e7a8de94731e702aed7f3e47",
+      "hash": "0ac10ca9a56ac1ddd2933401191dbea4b1cee24290ea7fb091d38e1c316b6875"
+    },
+    {
+      "index": 34,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:30:17.621Z",
+      "payload": {
+        "cycle": 12
+      },
+      "prev_hash": "0ac10ca9a56ac1ddd2933401191dbea4b1cee24290ea7fb091d38e1c316b6875",
+      "hash": "95fb3c1deaea8a2719edccfd7003f24fd0030012d9a0f0f5dc9e6de8862c2218"
+    },
+    {
+      "index": 35,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:30:17.636Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "95fb3c1deaea8a2719edccfd7003f24fd0030012d9a0f0f5dc9e6de8862c2218",
+      "hash": "f2072ec838900287584f7d61a9d39f9f65a826446f86d69cf278d0806b6669a3"
+    },
+    {
+      "index": 36,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:30:18.309Z",
+      "payload": {
+        "cycle": 12,
+        "indicator_ms": 669
+      },
+      "prev_hash": "f2072ec838900287584f7d61a9d39f9f65a826446f86d69cf278d0806b6669a3",
+      "hash": "e9fc64053569c80481309c239599ba45e92d5046710dd2a90f4314164d4f44b1"
+    },
+    {
+      "index": 37,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:30:23.322Z",
+      "payload": {
+        "cycle": 13
+      },
+      "prev_hash": "e9fc64053569c80481309c239599ba45e92d5046710dd2a90f4314164d4f44b1",
+      "hash": "37640a155acb43e3edf8fd08dccf8482e032533f20b45fcd38c912e9e6bd8523"
+    },
+    {
+      "index": 38,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:30:23.326Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "37640a155acb43e3edf8fd08dccf8482e032533f20b45fcd38c912e9e6bd8523",
+      "hash": "2313e091190efcde263784582c653f2878dc5f7217ce8533dacdd4be3daa61b5"
+    },
+    {
+      "index": 39,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:30:25.983Z",
+      "payload": {
+        "cycle": 13,
+        "indicator_ms": 2653
+      },
+      "prev_hash": "2313e091190efcde263784582c653f2878dc5f7217ce8533dacdd4be3daa61b5",
+      "hash": "b592dea704d685ae0aa76b63350c3a20e66b4e4c9fcc518d8b0a043bbc187a64"
+    },
+    {
+      "index": 40,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:30:30.989Z",
+      "payload": {
+        "cycle": 14
+      },
+      "prev_hash": "b592dea704d685ae0aa76b63350c3a20e66b4e4c9fcc518d8b0a043bbc187a64",
+      "hash": "e8fca6efc1bfde6d76bb330ee0adb54e9959acdbbcf92cc18530d96d387cddad"
+    },
+    {
+      "index": 41,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:30:31.001Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "e8fca6efc1bfde6d76bb330ee0adb54e9959acdbbcf92cc18530d96d387cddad",
+      "hash": "ac1d231e0a20194464f8726d3aafa15999fde3a4c09e831c6aa89ee8c9ad3c2b"
+    },
+    {
+      "index": 42,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:30:33.686Z",
+      "payload": {
+        "cycle": 14,
+        "indicator_ms": 2679
+      },
+      "prev_hash": "ac1d231e0a20194464f8726d3aafa15999fde3a4c09e831c6aa89ee8c9ad3c2b",
+      "hash": "699c298daf27538b40d4a80a67b949835cf8ec02a931bac461d8bada96054e33"
+    },
+    {
+      "index": 43,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:30:38.705Z",
+      "payload": {
+        "cycle": 15
+      },
+      "prev_hash": "699c298daf27538b40d4a80a67b949835cf8ec02a931bac461d8bada96054e33",
+      "hash": "b92e58012282f0de5157dc82e73e85909d56cdd5ddf95e7a59dd33e452c10f57"
+    },
+    {
+      "index": 44,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:30:38.719Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "b92e58012282f0de5157dc82e73e85909d56cdd5ddf95e7a59dd33e452c10f57",
+      "hash": "5679eaa9065f21210d5fab9a058b9658bcc59f91b2a2c50eab357fbe88272b6d"
+    },
+    {
+      "index": 45,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:30:39.300Z",
+      "payload": {
+        "cycle": 15,
+        "indicator_ms": 577
+      },
+      "prev_hash": "5679eaa9065f21210d5fab9a058b9658bcc59f91b2a2c50eab357fbe88272b6d",
+      "hash": "ffd511305c5cfd3846cc55b17b0324e59b383cb0c401e15d6aff66c1176fac49"
+    },
+    {
+      "index": 46,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:30:44.313Z",
+      "payload": {
+        "cycle": 16
+      },
+      "prev_hash": "ffd511305c5cfd3846cc55b17b0324e59b383cb0c401e15d6aff66c1176fac49",
+      "hash": "7941bca19bdeeb141a1ffabe768572433c95baaec0bc1a10e0300381cedc7337"
+    },
+    {
+      "index": 47,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:30:44.325Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "7941bca19bdeeb141a1ffabe768572433c95baaec0bc1a10e0300381cedc7337",
+      "hash": "2dae584f977f70f9781c46e52e5c3db3cea0be09c986a25683073438e4d16689"
+    },
+    {
+      "index": 48,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:30:46.399Z",
+      "payload": {
+        "cycle": 16,
+        "indicator_ms": 2070
+      },
+      "prev_hash": "2dae584f977f70f9781c46e52e5c3db3cea0be09c986a25683073438e4d16689",
+      "hash": "ad2af0a2347bb574d9a35bdd8d58eae297a2b4ff376fe4ab8ef8480d73583fa0"
+    },
+    {
+      "index": 49,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:30:51.406Z",
+      "payload": {
+        "cycle": 17
+      },
+      "prev_hash": "ad2af0a2347bb574d9a35bdd8d58eae297a2b4ff376fe4ab8ef8480d73583fa0",
+      "hash": "a4c8dc04fecc538f89a0c224b12ec9b00742671a009bf5d316758c43b9c3cc53"
+    },
+    {
+      "index": 50,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:30:51.413Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "a4c8dc04fecc538f89a0c224b12ec9b00742671a009bf5d316758c43b9c3cc53",
+      "hash": "c54f293ed4f58467e7a8ac87934bf9ba70567548ab3283c3bf825dba9ef1857b"
+    },
+    {
+      "index": 51,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:30:54.664Z",
+      "payload": {
+        "cycle": 17,
+        "indicator_ms": 3247
+      },
+      "prev_hash": "c54f293ed4f58467e7a8ac87934bf9ba70567548ab3283c3bf825dba9ef1857b",
+      "hash": "5670ed0ae101b7e44c6b6b44126385ec2808284f32415f1ca169e6a797424c0b"
+    },
+    {
+      "index": 52,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:30:59.678Z",
+      "payload": {
+        "cycle": 18
+      },
+      "prev_hash": "5670ed0ae101b7e44c6b6b44126385ec2808284f32415f1ca169e6a797424c0b",
+      "hash": "b1a1ad0c077089079f1381e5a967fa32eee291ee3fc6ae5c0ab8e4da80cd7cd7"
+    },
+    {
+      "index": 53,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:30:59.691Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "b1a1ad0c077089079f1381e5a967fa32eee291ee3fc6ae5c0ab8e4da80cd7cd7",
+      "hash": "04cf5884abb9113721b7cb1bb8761d93cb3b5431783029c01aa0bc8e5ac20ebf"
+    },
+    {
+      "index": 54,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:31:02.917Z",
+      "payload": {
+        "cycle": 18,
+        "indicator_ms": 3221
+      },
+      "prev_hash": "04cf5884abb9113721b7cb1bb8761d93cb3b5431783029c01aa0bc8e5ac20ebf",
+      "hash": "0c8b5cc75cb46e12670b43e3ace55054436af9aa73a8161a3e9aa39c543c6916"
+    },
+    {
+      "index": 55,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:31:07.938Z",
+      "payload": {
+        "cycle": 19
+      },
+      "prev_hash": "0c8b5cc75cb46e12670b43e3ace55054436af9aa73a8161a3e9aa39c543c6916",
+      "hash": "2f2d96b4ae305845bda98b370156d859cc90e7286dc3aa71d16af359cb209470"
+    },
+    {
+      "index": 56,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:31:07.950Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "2f2d96b4ae305845bda98b370156d859cc90e7286dc3aa71d16af359cb209470",
+      "hash": "4aec3a7321a7ebb30cded5822124a57de9ccc01b8e514590e67535a3a2cb975e"
+    },
+    {
+      "index": 57,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:31:11.173Z",
+      "payload": {
+        "cycle": 19,
+        "indicator_ms": 3219
+      },
+      "prev_hash": "4aec3a7321a7ebb30cded5822124a57de9ccc01b8e514590e67535a3a2cb975e",
+      "hash": "c922ca9e7b701e9ccc1baf5a34fe635e9c7a867bb3c2eda3bf63e40008d08461"
+    },
+    {
+      "index": 58,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:31:16.188Z",
+      "payload": {
+        "cycle": 20
+      },
+      "prev_hash": "c922ca9e7b701e9ccc1baf5a34fe635e9c7a867bb3c2eda3bf63e40008d08461",
+      "hash": "b56d747ce53a653fdecad7c4b4f7ca660364d729cbfcdf81337355e1f803d07c"
+    },
+    {
+      "index": 59,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:31:16.201Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "b56d747ce53a653fdecad7c4b4f7ca660364d729cbfcdf81337355e1f803d07c",
+      "hash": "be47749b902a2af34de76ff1c02a550233c3dac2efeec36aa38ed058e66bbf28"
+    },
+    {
+      "index": 60,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:31:18.213Z",
+      "payload": {
+        "cycle": 20,
+        "indicator_ms": 2008
+      },
+      "prev_hash": "be47749b902a2af34de76ff1c02a550233c3dac2efeec36aa38ed058e66bbf28",
+      "hash": "3350bb0772c61b150208b110f65b5714ae24560927d1ea8ab0cb5b8b1a6d4a23"
+    },
+    {
+      "index": 61,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:31:23.227Z",
+      "payload": {
+        "cycle": 21
+      },
+      "prev_hash": "3350bb0772c61b150208b110f65b5714ae24560927d1ea8ab0cb5b8b1a6d4a23",
+      "hash": "32d0ea4ac8fab0226cfc5120d65881a2dd4c6bd5e8a70e7a01eb1fdc9e0d5495"
+    },
+    {
+      "index": 62,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:31:23.231Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "32d0ea4ac8fab0226cfc5120d65881a2dd4c6bd5e8a70e7a01eb1fdc9e0d5495",
+      "hash": "cdb6a5ceea9b713131a9c14c20b2e9bac83e54f0b71829e4c3788f9691f15a5f"
+    },
+    {
+      "index": 63,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:31:25.498Z",
+      "payload": {
+        "cycle": 21,
+        "indicator_ms": 2262
+      },
+      "prev_hash": "cdb6a5ceea9b713131a9c14c20b2e9bac83e54f0b71829e4c3788f9691f15a5f",
+      "hash": "2fe3f1e90b920386e6ab0df1efcb14385e62ecf55ecc358c90b15bc5af88a271"
+    },
+    {
+      "index": 64,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:31:30.508Z",
+      "payload": {
+        "cycle": 22
+      },
+      "prev_hash": "2fe3f1e90b920386e6ab0df1efcb14385e62ecf55ecc358c90b15bc5af88a271",
+      "hash": "f918c2c34c1130bbed07d734f38db65423539f491239aaffaee4c17e9ca4a917"
+    },
+    {
+      "index": 65,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:31:30.512Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "f918c2c34c1130bbed07d734f38db65423539f491239aaffaee4c17e9ca4a917",
+      "hash": "8334f7d5262ac57d9331cf1580c6fdb01abada3217081e2e96f59fafd7514ab0"
+    },
+    {
+      "index": 66,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:31:32.613Z",
+      "payload": {
+        "cycle": 22,
+        "indicator_ms": 2096
+      },
+      "prev_hash": "8334f7d5262ac57d9331cf1580c6fdb01abada3217081e2e96f59fafd7514ab0",
+      "hash": "4f09073ef3e7a74561634597aef60af6d3b756bbc274b1daf2a000d09ee88216"
+    },
+    {
+      "index": 67,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:31:37.629Z",
+      "payload": {
+        "cycle": 23
+      },
+      "prev_hash": "4f09073ef3e7a74561634597aef60af6d3b756bbc274b1daf2a000d09ee88216",
+      "hash": "cfd9aecab83b7f1c12bcba6b730f1d95988e85a3dfff4035cdd1391e72e6f194"
+    },
+    {
+      "index": 68,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:31:37.642Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "cfd9aecab83b7f1c12bcba6b730f1d95988e85a3dfff4035cdd1391e72e6f194",
+      "hash": "ca79256c9e36b880d08ad3d8f3fec91742088e3132c229940c7287654ea162a5"
+    },
+    {
+      "index": 69,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:31:39.660Z",
+      "payload": {
+        "cycle": 23,
+        "indicator_ms": 2013
+      },
+      "prev_hash": "ca79256c9e36b880d08ad3d8f3fec91742088e3132c229940c7287654ea162a5",
+      "hash": "3c1caa7e488a89aa480e2bef8ae69c62b0546e6c07ea83869ae11989fcf8f8a7"
+    },
+    {
+      "index": 70,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:31:44.674Z",
+      "payload": {
+        "cycle": 24
+      },
+      "prev_hash": "3c1caa7e488a89aa480e2bef8ae69c62b0546e6c07ea83869ae11989fcf8f8a7",
+      "hash": "bff610b0047f5af76b2053bd47c61b0e665d5dddd34a579f24dd28eb4ed1b0f3"
+    },
+    {
+      "index": 71,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:31:44.688Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "bff610b0047f5af76b2053bd47c61b0e665d5dddd34a579f24dd28eb4ed1b0f3",
+      "hash": "5264d43c397c7ad174ab38c1486f41408eacd8dc78f04ae0646ec03b7f3fa758"
+    },
+    {
+      "index": 72,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:31:46.169Z",
+      "payload": {
+        "cycle": 24,
+        "indicator_ms": 1477
+      },
+      "prev_hash": "5264d43c397c7ad174ab38c1486f41408eacd8dc78f04ae0646ec03b7f3fa758",
+      "hash": "07a68c5a36549072baeeaeb5bed8cd3a2ed8b9b0c9c2d1d8bbac08dbaa4dd940"
+    },
+    {
+      "index": 73,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:31:51.183Z",
+      "payload": {
+        "cycle": 25
+      },
+      "prev_hash": "07a68c5a36549072baeeaeb5bed8cd3a2ed8b9b0c9c2d1d8bbac08dbaa4dd940",
+      "hash": "4e0eef38de755fd5df68e795eb4a965465cd7afaf60928828215859b3fd2ceff"
+    },
+    {
+      "index": 74,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:31:51.196Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "4e0eef38de755fd5df68e795eb4a965465cd7afaf60928828215859b3fd2ceff",
+      "hash": "bff208bcdd0a04cf25a452e406dc626550f8d7b5f8fd5a6b3159d67433414a01"
+    },
+    {
+      "index": 75,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:31:52.771Z",
+      "payload": {
+        "cycle": 25,
+        "indicator_ms": 1571
+      },
+      "prev_hash": "bff208bcdd0a04cf25a452e406dc626550f8d7b5f8fd5a6b3159d67433414a01",
+      "hash": "1c36335bf8f2cfc1cf2124b3acd323726c1c0ad693e2783b06ad4492d25750ee"
+    },
+    {
+      "index": 76,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:31:57.779Z",
+      "payload": {
+        "cycle": 26
+      },
+      "prev_hash": "1c36335bf8f2cfc1cf2124b3acd323726c1c0ad693e2783b06ad4492d25750ee",
+      "hash": "321af6a85a6fee012c51ffc7b914e86f3b77541e984dbe2177881f11aef2c0cf"
+    },
+    {
+      "index": 77,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:31:57.792Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "321af6a85a6fee012c51ffc7b914e86f3b77541e984dbe2177881f11aef2c0cf",
+      "hash": "754be9f3b717ceac2bbb7f92348a654e63361a3d0ad9ebcbd7b436fc093875e2"
+    },
+    {
+      "index": 78,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:32:01.033Z",
+      "payload": {
+        "cycle": 26,
+        "indicator_ms": 3235
+      },
+      "prev_hash": "754be9f3b717ceac2bbb7f92348a654e63361a3d0ad9ebcbd7b436fc093875e2",
+      "hash": "8b0f28086b7ed82d705de0acd02dea00a6120f7e1d90f8e95427cef239116c42"
+    },
+    {
+      "index": 79,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:32:06.039Z",
+      "payload": {
+        "cycle": 27
+      },
+      "prev_hash": "8b0f28086b7ed82d705de0acd02dea00a6120f7e1d90f8e95427cef239116c42",
+      "hash": "1048ea916130dd90427460e1f5f31009394429aa42512b9e1090815efc4b8850"
+    },
+    {
+      "index": 80,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:32:06.054Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "1048ea916130dd90427460e1f5f31009394429aa42512b9e1090815efc4b8850",
+      "hash": "31943e906317fc53a21302f76c94cd73d129da7bbde478d48cbdb89ebb1b146c"
+    },
+    {
+      "index": 81,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:32:09.298Z",
+      "payload": {
+        "cycle": 27,
+        "indicator_ms": 3240
+      },
+      "prev_hash": "31943e906317fc53a21302f76c94cd73d129da7bbde478d48cbdb89ebb1b146c",
+      "hash": "fe163b3144d1cc0b8ae5080bbf7dfbfcf564d167d3a42edce86fcc9934ada26b"
+    },
+    {
+      "index": 82,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:32:14.312Z",
+      "payload": {
+        "cycle": 28
+      },
+      "prev_hash": "fe163b3144d1cc0b8ae5080bbf7dfbfcf564d167d3a42edce86fcc9934ada26b",
+      "hash": "36ebcfaf8ac0aa044527eee019b5827c92ee3dbb350bba1d6a7b02ca3a004150"
+    },
+    {
+      "index": 83,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:32:14.332Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "36ebcfaf8ac0aa044527eee019b5827c92ee3dbb350bba1d6a7b02ca3a004150",
+      "hash": "21bde7158a2a0affd31d6bf21b7930baa5667db55e85b39073e809acf6710605"
+    },
+    {
+      "index": 84,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:32:17.533Z",
+      "payload": {
+        "cycle": 28,
+        "indicator_ms": 3197
+      },
+      "prev_hash": "21bde7158a2a0affd31d6bf21b7930baa5667db55e85b39073e809acf6710605",
+      "hash": "59af98f680710aba80ac14c5f82393d2bbbc3c718274c23dc297d5c3fdd9d649"
+    },
+    {
+      "index": 85,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:32:22.550Z",
+      "payload": {
+        "cycle": 29
+      },
+      "prev_hash": "59af98f680710aba80ac14c5f82393d2bbbc3c718274c23dc297d5c3fdd9d649",
+      "hash": "11a8dfd1cfa2a4acd429ba4d0297261fa9fef3bf8529315120657427c6634df2"
+    },
+    {
+      "index": 86,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:32:22.566Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "11a8dfd1cfa2a4acd429ba4d0297261fa9fef3bf8529315120657427c6634df2",
+      "hash": "00d29b6163fd944616a622d02489ddc35fb35045e0d096ff7dd93ad903545e44"
+    },
+    {
+      "index": 87,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:32:25.800Z",
+      "payload": {
+        "cycle": 29,
+        "indicator_ms": 3230
+      },
+      "prev_hash": "00d29b6163fd944616a622d02489ddc35fb35045e0d096ff7dd93ad903545e44",
+      "hash": "51c62bde4d94b7eb4b157e9dc71606b7464e9b552626fbd603ada095553f6342"
+    },
+    {
+      "index": 88,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:32:30.815Z",
+      "payload": {
+        "cycle": 30
+      },
+      "prev_hash": "51c62bde4d94b7eb4b157e9dc71606b7464e9b552626fbd603ada095553f6342",
+      "hash": "26d8388640bcb31b8f2a61f41fb033b1b65239d13177c6a765ce3e2234307a59"
+    },
+    {
+      "index": 89,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:32:30.828Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "26d8388640bcb31b8f2a61f41fb033b1b65239d13177c6a765ce3e2234307a59",
+      "hash": "5f037d288ba5f52d074c4f2ddfda870a1dcf8b549a8313d7a3c815c965b6fa00"
+    },
+    {
+      "index": 90,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:32:31.039Z",
+      "payload": {
+        "cycle": 30,
+        "indicator_ms": 207
+      },
+      "prev_hash": "5f037d288ba5f52d074c4f2ddfda870a1dcf8b549a8313d7a3c815c965b6fa00",
+      "hash": "8abec61f32723474482184cdb2bda3ea61a5deeef713ff1d9017f3f7f1799aa0"
+    },
+    {
+      "index": 91,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:32:36.057Z",
+      "payload": {
+        "cycle": 31
+      },
+      "prev_hash": "8abec61f32723474482184cdb2bda3ea61a5deeef713ff1d9017f3f7f1799aa0",
+      "hash": "fa81a15c064042623de1c0aef17e3f00fc35850b7a6f04e323ca52f6f3bf6578"
+    },
+    {
+      "index": 92,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:32:36.075Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "fa81a15c064042623de1c0aef17e3f00fc35850b7a6f04e323ca52f6f3bf6578",
+      "hash": "79f17a27ed1881fb1672df3844c2667e9a313ae21cfd9a2261c49354fa61d595"
+    },
+    {
+      "index": 93,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:32:39.317Z",
+      "payload": {
+        "cycle": 31,
+        "indicator_ms": 3237
+      },
+      "prev_hash": "79f17a27ed1881fb1672df3844c2667e9a313ae21cfd9a2261c49354fa61d595",
+      "hash": "9eca2d25875e0a70f2ff1a615f2a56aec5f815fa155e08b7c603cd1a078b1572"
+    },
+    {
+      "index": 94,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:32:44.332Z",
+      "payload": {
+        "cycle": 32
+      },
+      "prev_hash": "9eca2d25875e0a70f2ff1a615f2a56aec5f815fa155e08b7c603cd1a078b1572",
+      "hash": "9c8dd589ca57b782dccfed0f980b793633578fbe6072dc17d42932de04475879"
+    },
+    {
+      "index": 95,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:32:44.351Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "9c8dd589ca57b782dccfed0f980b793633578fbe6072dc17d42932de04475879",
+      "hash": "a96fa85d46154278eb7b60800b4220c55425fa48d4d22e3e24820ebb77a6b753"
+    },
+    {
+      "index": 96,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:32:47.168Z",
+      "payload": {
+        "cycle": 32,
+        "indicator_ms": 2812
+      },
+      "prev_hash": "a96fa85d46154278eb7b60800b4220c55425fa48d4d22e3e24820ebb77a6b753",
+      "hash": "7dcf07be6464c9fb3ef61d82f7401a4c0393c2f66580d24188cbd378eccf25d5"
+    },
+    {
+      "index": 97,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:32:52.182Z",
+      "payload": {
+        "cycle": 33
+      },
+      "prev_hash": "7dcf07be6464c9fb3ef61d82f7401a4c0393c2f66580d24188cbd378eccf25d5",
+      "hash": "a413283b559ad1c903f0f5333e879341aefa2c0b743a67e80507ba11c52daf63"
+    },
+    {
+      "index": 98,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:32:52.196Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "a413283b559ad1c903f0f5333e879341aefa2c0b743a67e80507ba11c52daf63",
+      "hash": "78c565b91100a253131bb8086d388b849364ce6a4fcf8d5b4da4f247671ba112"
+    },
+    {
+      "index": 99,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:32:54.019Z",
+      "payload": {
+        "cycle": 33,
+        "indicator_ms": 1818
+      },
+      "prev_hash": "78c565b91100a253131bb8086d388b849364ce6a4fcf8d5b4da4f247671ba112",
+      "hash": "b34efa57c756c65cdcc527ce062d53d519573b9479e05c2f21eb50e275503218"
+    },
+    {
+      "index": 100,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:32:59.033Z",
+      "payload": {
+        "cycle": 34
+      },
+      "prev_hash": "b34efa57c756c65cdcc527ce062d53d519573b9479e05c2f21eb50e275503218",
+      "hash": "83d29f3aff558e529a95cbb93cac694ae8a2af9a58f2b1d05551929ad840ad8c"
+    },
+    {
+      "index": 101,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:32:59.046Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "83d29f3aff558e529a95cbb93cac694ae8a2af9a58f2b1d05551929ad840ad8c",
+      "hash": "bf6151454c4372f66a673a8f585d09995bff0091fd66e7d8692c8a9e12d1ea9b"
+    },
+    {
+      "index": 102,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:33:02.282Z",
+      "payload": {
+        "cycle": 34,
+        "indicator_ms": 3231
+      },
+      "prev_hash": "bf6151454c4372f66a673a8f585d09995bff0091fd66e7d8692c8a9e12d1ea9b",
+      "hash": "3606bc545740f185653ac85b9beae587a2ee418e006f9c95aec17623921c8be1"
+    },
+    {
+      "index": 103,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:33:07.292Z",
+      "payload": {
+        "cycle": 35
+      },
+      "prev_hash": "3606bc545740f185653ac85b9beae587a2ee418e006f9c95aec17623921c8be1",
+      "hash": "850f7cc9997414c90839ed0eae33c88ace7af2d6c5ddaad7fbd5297bce5a2c0b"
+    },
+    {
+      "index": 104,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:33:07.297Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "850f7cc9997414c90839ed0eae33c88ace7af2d6c5ddaad7fbd5297bce5a2c0b",
+      "hash": "4ceeb5d27918eb38e301c3e3f284d14251e148d1ce2a5769b1ee81cd60967414"
+    },
+    {
+      "index": 105,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:33:10.533Z",
+      "payload": {
+        "cycle": 35,
+        "indicator_ms": 3228
+      },
+      "prev_hash": "4ceeb5d27918eb38e301c3e3f284d14251e148d1ce2a5769b1ee81cd60967414",
+      "hash": "e0a675aea86eea3c0f6cb342996895367bec4a5450a45a55d52c4ea333949a96"
+    },
+    {
+      "index": 106,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:33:15.546Z",
+      "payload": {
+        "cycle": 36
+      },
+      "prev_hash": "e0a675aea86eea3c0f6cb342996895367bec4a5450a45a55d52c4ea333949a96",
+      "hash": "0476a46b77ccef5f6d1d5ca6fd49cec2df02ae9bfbb7b9a2e96a47eb5c082055"
+    },
+    {
+      "index": 107,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:33:15.558Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "0476a46b77ccef5f6d1d5ca6fd49cec2df02ae9bfbb7b9a2e96a47eb5c082055",
+      "hash": "97820394b7bce99c9549da6fa952547b7826bcc28a5452cf531464c36f673eb5"
+    },
+    {
+      "index": 108,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:33:18.790Z",
+      "payload": {
+        "cycle": 36,
+        "indicator_ms": 3227
+      },
+      "prev_hash": "97820394b7bce99c9549da6fa952547b7826bcc28a5452cf531464c36f673eb5",
+      "hash": "d68740647dad3d15ef17ceac1dbfc737be03ff631172b6418e0814b8682fd12b"
+    },
+    {
+      "index": 109,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:33:23.804Z",
+      "payload": {
+        "cycle": 37
+      },
+      "prev_hash": "d68740647dad3d15ef17ceac1dbfc737be03ff631172b6418e0814b8682fd12b",
+      "hash": "ed21260755f1e42324fcf7e2787656c888defbabc5bccda666fe6540678adde1"
+    },
+    {
+      "index": 110,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:33:23.817Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "ed21260755f1e42324fcf7e2787656c888defbabc5bccda666fe6540678adde1",
+      "hash": "cb8236f1fc4f058333d2737d86822e9ad2713cf9ecf89dabe9d7717d835cf1b1"
+    },
+    {
+      "index": 111,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:33:27.053Z",
+      "payload": {
+        "cycle": 37,
+        "indicator_ms": 3231
+      },
+      "prev_hash": "cb8236f1fc4f058333d2737d86822e9ad2713cf9ecf89dabe9d7717d835cf1b1",
+      "hash": "98f9f900c5712ae0970961d590a9f0a25fc5569b85bb09331200435517d5276c"
+    },
+    {
+      "index": 112,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:33:32.072Z",
+      "payload": {
+        "cycle": 38
+      },
+      "prev_hash": "98f9f900c5712ae0970961d590a9f0a25fc5569b85bb09331200435517d5276c",
+      "hash": "55b0ae659762c0f098d0a4a22079e0a7b0346c896baf03f438624c5c7b52cd8e"
+    },
+    {
+      "index": 113,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:33:32.085Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "55b0ae659762c0f098d0a4a22079e0a7b0346c896baf03f438624c5c7b52cd8e",
+      "hash": "7d5c450ba5e93f75812d977154d829b51687b7be37b1ba5d878aebedf768613b"
+    },
+    {
+      "index": 114,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:33:35.293Z",
+      "payload": {
+        "cycle": 38,
+        "indicator_ms": 3204
+      },
+      "prev_hash": "7d5c450ba5e93f75812d977154d829b51687b7be37b1ba5d878aebedf768613b",
+      "hash": "e13056573ae2bcbddbd335f96ddd9b0c31241ac826594a30e3b06121b0338b8e"
+    },
+    {
+      "index": 115,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:33:40.317Z",
+      "payload": {
+        "cycle": 39
+      },
+      "prev_hash": "e13056573ae2bcbddbd335f96ddd9b0c31241ac826594a30e3b06121b0338b8e",
+      "hash": "12718ea37eea36df0f3de9b1365bd9a0f86798a4e7e0799f55f7c303eddfa058"
+    },
+    {
+      "index": 116,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:33:40.324Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "12718ea37eea36df0f3de9b1365bd9a0f86798a4e7e0799f55f7c303eddfa058",
+      "hash": "46dfa58ee0eb286f4e012d84ba7685cf3a16f765829ccec09b154b260418ce95"
+    },
+    {
+      "index": 117,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:33:42.018Z",
+      "payload": {
+        "cycle": 39,
+        "indicator_ms": 1688
+      },
+      "prev_hash": "46dfa58ee0eb286f4e012d84ba7685cf3a16f765829ccec09b154b260418ce95",
+      "hash": "bb08219baf45a9dd175a6a1a50996e46cfcd1094460579033129ffe620ad48d6"
+    },
+    {
+      "index": 118,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:33:47.034Z",
+      "payload": {
+        "cycle": 40
+      },
+      "prev_hash": "bb08219baf45a9dd175a6a1a50996e46cfcd1094460579033129ffe620ad48d6",
+      "hash": "e994f67e63ce5e036b62d38181b7cdee54f6641e2e0e707548be4efe4b07f883"
+    },
+    {
+      "index": 119,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:33:47.055Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "e994f67e63ce5e036b62d38181b7cdee54f6641e2e0e707548be4efe4b07f883",
+      "hash": "8c8a268a8bb03ef1b737863814ee6bab94654d95591e53f84fd2d0eebdba6ec1"
+    },
+    {
+      "index": 120,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:33:50.273Z",
+      "payload": {
+        "cycle": 40,
+        "indicator_ms": 3213
+      },
+      "prev_hash": "8c8a268a8bb03ef1b737863814ee6bab94654d95591e53f84fd2d0eebdba6ec1",
+      "hash": "9fbf5bf50e2418cf0859ad02ebb2110db7ccfb67bc5d9cd2dadb542d673fde6a"
+    },
+    {
+      "index": 121,
+      "event": "kill_switch_sync",
+      "timestamp": "2026-09-13T01:33:56.611Z",
+      "payload": {
+        "engaged": false,
+        "cancelAll": "not_needed",
+        "detail": "kill switch not engaged",
+        "elapsed_ms": 0
+      },
+      "prev_hash": "9fbf5bf50e2418cf0859ad02ebb2110db7ccfb67bc5d9cd2dadb542d673fde6a",
+      "hash": "35cdb45a21447bff9b4ea35c5a3709b9e90c8b0babb04545c0d6288510903b0c"
+    },
+    {
+      "index": 122,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:33:56.629Z",
+      "payload": {
+        "cycle": 1
+      },
+      "prev_hash": "35cdb45a21447bff9b4ea35c5a3709b9e90c8b0babb04545c0d6288510903b0c",
+      "hash": "a2e806c2c0d024eef6ea4907a9dd7b1db51a20b554941b33787f4cd28e71db75"
+    },
+    {
+      "index": 123,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:33:56.635Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "a2e806c2c0d024eef6ea4907a9dd7b1db51a20b554941b33787f4cd28e71db75",
+      "hash": "ecbd86701e9cdc85a6d34e1566be20200c0496a50ac9d4c55d92fdbd4397f2e6"
+    },
+    {
+      "index": 124,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:33:59.953Z",
+      "payload": {
+        "cycle": 1,
+        "indicator_ms": 3313
+      },
+      "prev_hash": "ecbd86701e9cdc85a6d34e1566be20200c0496a50ac9d4c55d92fdbd4397f2e6",
+      "hash": "60bf5cf904f677b308c04814204ff31321f2be4cfd9a12bc07abf40433c5c875"
+    },
+    {
+      "index": 125,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:34:04.976Z",
+      "payload": {
+        "cycle": 2
+      },
+      "prev_hash": "60bf5cf904f677b308c04814204ff31321f2be4cfd9a12bc07abf40433c5c875",
+      "hash": "7ba5b6a711c39e064966beba60c411a3fbe7f8b5ad0ed254f574662fb52141a2"
+    },
+    {
+      "index": 126,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:34:04.990Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "7ba5b6a711c39e064966beba60c411a3fbe7f8b5ad0ed254f574662fb52141a2",
+      "hash": "48181524a49fbfc62180dccd9f47a2afc0fcfd068c483c52dc94e40c9405729e"
+    },
+    {
+      "index": 127,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:34:08.198Z",
+      "payload": {
+        "cycle": 2,
+        "indicator_ms": 3200
+      },
+      "prev_hash": "48181524a49fbfc62180dccd9f47a2afc0fcfd068c483c52dc94e40c9405729e",
+      "hash": "8729170cfa07d9a2856ce641421c8ebe7b255d135f2a4958efbb59f1ac984aa2"
+    },
+    {
+      "index": 128,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:34:13.213Z",
+      "payload": {
+        "cycle": 3
+      },
+      "prev_hash": "8729170cfa07d9a2856ce641421c8ebe7b255d135f2a4958efbb59f1ac984aa2",
+      "hash": "ee819a35d7b2bc1a8d888492ff32ed629f66776216bb223a96ee157313079119"
+    },
+    {
+      "index": 129,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:34:13.228Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "ee819a35d7b2bc1a8d888492ff32ed629f66776216bb223a96ee157313079119",
+      "hash": "9ea41134df396aa76b996ad2cc56c96287cd998ed017dd568045679ab05a195a"
+    },
+    {
+      "index": 130,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:34:16.452Z",
+      "payload": {
+        "cycle": 3,
+        "indicator_ms": 3216
+      },
+      "prev_hash": "9ea41134df396aa76b996ad2cc56c96287cd998ed017dd568045679ab05a195a",
+      "hash": "898425d84572aa192a8ac2bc01550c0d5f55ca915b7b0feced0bcfb1af801835"
+    },
+    {
+      "index": 131,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:34:21.468Z",
+      "payload": {
+        "cycle": 4
+      },
+      "prev_hash": "898425d84572aa192a8ac2bc01550c0d5f55ca915b7b0feced0bcfb1af801835",
+      "hash": "535ce73ac17be1567b08413f59119c4fad687620eb2ff77dcb61071b10a4b119"
+    },
+    {
+      "index": 132,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:34:21.483Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "535ce73ac17be1567b08413f59119c4fad687620eb2ff77dcb61071b10a4b119",
+      "hash": "76d395ff740d692f7771bc04bdb5366eeb32d3b7cc1f90d99912fc900ed1abb8"
+    },
+    {
+      "index": 133,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:34:24.702Z",
+      "payload": {
+        "cycle": 4,
+        "indicator_ms": 3212
+      },
+      "prev_hash": "76d395ff740d692f7771bc04bdb5366eeb32d3b7cc1f90d99912fc900ed1abb8",
+      "hash": "53957f03ad22de8729569c198be217c04fa62e4d431924fb4ba0224522a0da00"
+    },
+    {
+      "index": 134,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:34:29.718Z",
+      "payload": {
+        "cycle": 5
+      },
+      "prev_hash": "53957f03ad22de8729569c198be217c04fa62e4d431924fb4ba0224522a0da00",
+      "hash": "19f6f75464611dd478fbb8cbc4a273e30c4f59f926d7008111345dd99fc5d505"
+    },
+    {
+      "index": 135,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:34:29.732Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "19f6f75464611dd478fbb8cbc4a273e30c4f59f926d7008111345dd99fc5d505",
+      "hash": "42e58756e747f24eb247bfc045ae3c05e3f7bd6babef7da165178cb0e571fc70"
+    },
+    {
+      "index": 136,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:34:31.949Z",
+      "payload": {
+        "cycle": 5,
+        "indicator_ms": 2212
+      },
+      "prev_hash": "42e58756e747f24eb247bfc045ae3c05e3f7bd6babef7da165178cb0e571fc70",
+      "hash": "e65c8a70e7f8441e71270cc558cfb4e2bfa66f0d2bd2653daccaa03ab42860bc"
+    },
+    {
+      "index": 137,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:34:36.965Z",
+      "payload": {
+        "cycle": 6
+      },
+      "prev_hash": "e65c8a70e7f8441e71270cc558cfb4e2bfa66f0d2bd2653daccaa03ab42860bc",
+      "hash": "93307001bc2e5b3bbb22cb8199beb96ed1abe0ed194443eb380929061b4c0564"
+    },
+    {
+      "index": 138,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:34:36.980Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "93307001bc2e5b3bbb22cb8199beb96ed1abe0ed194443eb380929061b4c0564",
+      "hash": "a29a56716fbab1a26daba13ca3575e8be7b1790a6dc78671f21ba438b181fc36"
+    },
+    {
+      "index": 139,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:34:40.202Z",
+      "payload": {
+        "cycle": 6,
+        "indicator_ms": 3215
+      },
+      "prev_hash": "a29a56716fbab1a26daba13ca3575e8be7b1790a6dc78671f21ba438b181fc36",
+      "hash": "0f6b555629c3b3c37e07128dfca8a9b827ce7b36b8d7400f9e5fbba23cdc3e59"
+    },
+    {
+      "index": 140,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:34:45.224Z",
+      "payload": {
+        "cycle": 7
+      },
+      "prev_hash": "0f6b555629c3b3c37e07128dfca8a9b827ce7b36b8d7400f9e5fbba23cdc3e59",
+      "hash": "c69e159796e9ecddefc34bd5749fc95dc6dd5e1f452d5619ce0355ad4f941701"
+    },
+    {
+      "index": 141,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:34:45.244Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "c69e159796e9ecddefc34bd5749fc95dc6dd5e1f452d5619ce0355ad4f941701",
+      "hash": "2803a16a7532b51293d282e5d6909d20288c15a4753f1c4d77244d4b8035772a"
+    },
+    {
+      "index": 142,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:34:45.444Z",
+      "payload": {
+        "cycle": 7,
+        "indicator_ms": 194
+      },
+      "prev_hash": "2803a16a7532b51293d282e5d6909d20288c15a4753f1c4d77244d4b8035772a",
+      "hash": "c67505cb11d6d639a84918766f76a400c7c8b683e2a5fc32e318aacc8a479235"
+    },
+    {
+      "index": 143,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:34:50.463Z",
+      "payload": {
+        "cycle": 8
+      },
+      "prev_hash": "c67505cb11d6d639a84918766f76a400c7c8b683e2a5fc32e318aacc8a479235",
+      "hash": "147487a468eff1dfa3c55cd984dda3dcb07a6e4d96dada8b1400716e295d6f79"
+    },
+    {
+      "index": 144,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:34:50.479Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "147487a468eff1dfa3c55cd984dda3dcb07a6e4d96dada8b1400716e295d6f79",
+      "hash": "54e7162bddb152c9c18cb6453ab640a19d9de2d03681ed0ceeddb01d8100074d"
+    },
+    {
+      "index": 145,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:34:53.717Z",
+      "payload": {
+        "cycle": 8,
+        "indicator_ms": 3231
+      },
+      "prev_hash": "54e7162bddb152c9c18cb6453ab640a19d9de2d03681ed0ceeddb01d8100074d",
+      "hash": "dcdd02d5e416df42ec883cfe1cde79e7c3df48f9df7793118ce4a481ea8ab9f3"
+    },
+    {
+      "index": 146,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:34:58.740Z",
+      "payload": {
+        "cycle": 9
+      },
+      "prev_hash": "dcdd02d5e416df42ec883cfe1cde79e7c3df48f9df7793118ce4a481ea8ab9f3",
+      "hash": "e1fc9f7f5c652c25ec8d1535de00ecc56b15b8e583079210534a89abc5cb2397"
+    },
+    {
+      "index": 147,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:34:58.753Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "e1fc9f7f5c652c25ec8d1535de00ecc56b15b8e583079210534a89abc5cb2397",
+      "hash": "31b55059130b55f6c98ce92d0496ac6efb103582ab0b3235e83cf563964aae80"
+    },
+    {
+      "index": 148,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:35:01.981Z",
+      "payload": {
+        "cycle": 9,
+        "indicator_ms": 3222
+      },
+      "prev_hash": "31b55059130b55f6c98ce92d0496ac6efb103582ab0b3235e83cf563964aae80",
+      "hash": "40142cdac7dc1edd507f22424875fd6c47397dd05ca456f09e1cf1cffbe4f0af"
+    },
+    {
+      "index": 149,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:35:06.997Z",
+      "payload": {
+        "cycle": 10
+      },
+      "prev_hash": "40142cdac7dc1edd507f22424875fd6c47397dd05ca456f09e1cf1cffbe4f0af",
+      "hash": "416fc5091e5a2d3ff9934a508826918f0e758c914d4072095b6b290799ade5d7"
+    },
+    {
+      "index": 150,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:35:07.019Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "416fc5091e5a2d3ff9934a508826918f0e758c914d4072095b6b290799ade5d7",
+      "hash": "a8e446de0161dcfa9de0637531d1d16851a53338461c02d0104fa518dc071642"
+    },
+    {
+      "index": 151,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:35:10.273Z",
+      "payload": {
+        "cycle": 10,
+        "indicator_ms": 3234
+      },
+      "prev_hash": "a8e446de0161dcfa9de0637531d1d16851a53338461c02d0104fa518dc071642",
+      "hash": "5b24cc719f6451f8551f0ffc6f496191bab3ee2d700727f1e2b300e27b4f299c"
+    },
+    {
+      "index": 152,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:35:15.287Z",
+      "payload": {
+        "cycle": 11
+      },
+      "prev_hash": "5b24cc719f6451f8551f0ffc6f496191bab3ee2d700727f1e2b300e27b4f299c",
+      "hash": "f348cf16f294e75a9341334f21887461c950ff5b59ce15bd698407ccc0244822"
+    },
+    {
+      "index": 153,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:35:15.293Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "f348cf16f294e75a9341334f21887461c950ff5b59ce15bd698407ccc0244822",
+      "hash": "9a5c3d4bba63d211c857cb733887c3a61d24456a921bbe90d09f400c7ea82fb1"
+    },
+    {
+      "index": 154,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:35:18.557Z",
+      "payload": {
+        "cycle": 11,
+        "indicator_ms": 3259
+      },
+      "prev_hash": "9a5c3d4bba63d211c857cb733887c3a61d24456a921bbe90d09f400c7ea82fb1",
+      "hash": "2502f854d9d004a5b3c3a95f9a000d317585edbc055373bd05ebe7f5e2569361"
+    },
+    {
+      "index": 155,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:35:23.579Z",
+      "payload": {
+        "cycle": 12
+      },
+      "prev_hash": "2502f854d9d004a5b3c3a95f9a000d317585edbc055373bd05ebe7f5e2569361",
+      "hash": "0bff6f6bd2dba38cff02df365cf7e1aa781d4d851ad53492d409b89201f46016"
+    },
+    {
+      "index": 156,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:35:23.594Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "0bff6f6bd2dba38cff02df365cf7e1aa781d4d851ad53492d409b89201f46016",
+      "hash": "6e9c7e75ec9980490e71875357ee3b8c7fec94ad43921d77b752e87b3b445499"
+    },
+    {
+      "index": 157,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:35:26.788Z",
+      "payload": {
+        "cycle": 12,
+        "indicator_ms": 3189
+      },
+      "prev_hash": "6e9c7e75ec9980490e71875357ee3b8c7fec94ad43921d77b752e87b3b445499",
+      "hash": "58daee61542481e877a453bef17c7cb1ebd028913bd5e34a69955b7f63b859ca"
+    },
+    {
+      "index": 158,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:35:31.803Z",
+      "payload": {
+        "cycle": 13
+      },
+      "prev_hash": "58daee61542481e877a453bef17c7cb1ebd028913bd5e34a69955b7f63b859ca",
+      "hash": "d218cbf54e23c616760a3e22f6ad5b6044ceb4f199e0e885951178f67414a363"
+    },
+    {
+      "index": 159,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:35:31.821Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "d218cbf54e23c616760a3e22f6ad5b6044ceb4f199e0e885951178f67414a363",
+      "hash": "069a1bf7ee51f33b0bdbb0c0a204efbd662805e429981315e2e78d717ea0fcb7"
+    },
+    {
+      "index": 160,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:35:32.482Z",
+      "payload": {
+        "cycle": 13,
+        "indicator_ms": 655
+      },
+      "prev_hash": "069a1bf7ee51f33b0bdbb0c0a204efbd662805e429981315e2e78d717ea0fcb7",
+      "hash": "06e4b17de3f43d34d36c32466983a0a0c6ad9d2e3d3eaca86fab87e0a4c1d4a5"
+    },
+    {
+      "index": 161,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:35:37.498Z",
+      "payload": {
+        "cycle": 14
+      },
+      "prev_hash": "06e4b17de3f43d34d36c32466983a0a0c6ad9d2e3d3eaca86fab87e0a4c1d4a5",
+      "hash": "ace6972d70e5d65bec8a3c9d709906d79678e52e65cec6aa56e923d999e96de6"
+    },
+    {
+      "index": 162,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:35:37.514Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "ace6972d70e5d65bec8a3c9d709906d79678e52e65cec6aa56e923d999e96de6",
+      "hash": "e86ec15935c825e842764fcc9b9dc9611e37a8460bbe328366ae56e0f3a203de"
+    },
+    {
+      "index": 163,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:35:40.756Z",
+      "payload": {
+        "cycle": 14,
+        "indicator_ms": 3236
+      },
+      "prev_hash": "e86ec15935c825e842764fcc9b9dc9611e37a8460bbe328366ae56e0f3a203de",
+      "hash": "f066d2c8ee0f207b816951d6ca94c39b5f9b8e38d081f9d1f0ce3af490bd1812"
+    },
+    {
+      "index": 164,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:35:45.771Z",
+      "payload": {
+        "cycle": 15
+      },
+      "prev_hash": "f066d2c8ee0f207b816951d6ca94c39b5f9b8e38d081f9d1f0ce3af490bd1812",
+      "hash": "92b2a38d25ef3501b9f11711c793269dea722274876741eeca4942a51bbf4653"
+    },
+    {
+      "index": 165,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:35:45.785Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "92b2a38d25ef3501b9f11711c793269dea722274876741eeca4942a51bbf4653",
+      "hash": "bba027da4b937740ae0e15001f130e1906f650440f46a3498e76b3157b08fcaf"
+    },
+    {
+      "index": 166,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:35:48.998Z",
+      "payload": {
+        "cycle": 15,
+        "indicator_ms": 3206
+      },
+      "prev_hash": "bba027da4b937740ae0e15001f130e1906f650440f46a3498e76b3157b08fcaf",
+      "hash": "7015f87a7387c5d0872c8dd652bb19d4d0c912d5855a1ee65117f66f6e974038"
+    },
+    {
+      "index": 167,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:35:54.022Z",
+      "payload": {
+        "cycle": 16
+      },
+      "prev_hash": "7015f87a7387c5d0872c8dd652bb19d4d0c912d5855a1ee65117f66f6e974038",
+      "hash": "cef08fe941871b9548969996ca7fb6e6fd8d8930c300e56cc2fc25f35c148f65"
+    },
+    {
+      "index": 168,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:35:54.036Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "cef08fe941871b9548969996ca7fb6e6fd8d8930c300e56cc2fc25f35c148f65",
+      "hash": "d8d2a8cd7fcfce5bb64c4cc821fadc6b2578a6049f34b596acd3ee89af73eb1f"
+    },
+    {
+      "index": 169,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:35:57.256Z",
+      "payload": {
+        "cycle": 16,
+        "indicator_ms": 3214
+      },
+      "prev_hash": "d8d2a8cd7fcfce5bb64c4cc821fadc6b2578a6049f34b596acd3ee89af73eb1f",
+      "hash": "84b3dbef1d7e4748c4fb33740522f2391625469e84481337e92f5ebfadd3ad3e"
+    },
+    {
+      "index": 170,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:36:02.275Z",
+      "payload": {
+        "cycle": 17
+      },
+      "prev_hash": "84b3dbef1d7e4748c4fb33740522f2391625469e84481337e92f5ebfadd3ad3e",
+      "hash": "59ce098762355320a64011acbca500c6dc6bf762819b408cc30f47c5de5be588"
+    },
+    {
+      "index": 171,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:36:02.304Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "59ce098762355320a64011acbca500c6dc6bf762819b408cc30f47c5de5be588",
+      "hash": "239b6132b5445fd56fb1bb3f746305f9d96ffb7eca2deced638b8109f2fcb15f"
+    },
+    {
+      "index": 172,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:36:05.507Z",
+      "payload": {
+        "cycle": 17,
+        "indicator_ms": 3195
+      },
+      "prev_hash": "239b6132b5445fd56fb1bb3f746305f9d96ffb7eca2deced638b8109f2fcb15f",
+      "hash": "d8274aa46092cecace16193595cbec15ceddaae6f414a1a93d2485705cbb51b0"
+    },
+    {
+      "index": 173,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:36:10.523Z",
+      "payload": {
+        "cycle": 18
+      },
+      "prev_hash": "d8274aa46092cecace16193595cbec15ceddaae6f414a1a93d2485705cbb51b0",
+      "hash": "9cd848b03a06df7e995ce284a90ce95674bf103e92050bad14baf9f68928935a"
+    },
+    {
+      "index": 174,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:36:10.537Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "9cd848b03a06df7e995ce284a90ce95674bf103e92050bad14baf9f68928935a",
+      "hash": "2149a50dc950dedb6bf48e39cae360a6e0e53410207358d9fcd8f198c6410ff3"
+    },
+    {
+      "index": 175,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:36:13.773Z",
+      "payload": {
+        "cycle": 18,
+        "indicator_ms": 3227
+      },
+      "prev_hash": "2149a50dc950dedb6bf48e39cae360a6e0e53410207358d9fcd8f198c6410ff3",
+      "hash": "4d22c27e3b972136070a8bca9a46f0cf77701a2b2ddd95f2e533c2675165d4e4"
+    },
+    {
+      "index": 176,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:36:18.791Z",
+      "payload": {
+        "cycle": 19
+      },
+      "prev_hash": "4d22c27e3b972136070a8bca9a46f0cf77701a2b2ddd95f2e533c2675165d4e4",
+      "hash": "bcc5a04a9562175121755cc7684ee2f17aa9402d0ffd1f90bf30a2b12620e13e"
+    },
+    {
+      "index": 177,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:36:18.810Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "bcc5a04a9562175121755cc7684ee2f17aa9402d0ffd1f90bf30a2b12620e13e",
+      "hash": "3fee495c355fe90fe092b6a024cf48c08e2c7f1808eb689365af344843f3a481"
+    },
+    {
+      "index": 178,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:36:22.030Z",
+      "payload": {
+        "cycle": 19,
+        "indicator_ms": 3213
+      },
+      "prev_hash": "3fee495c355fe90fe092b6a024cf48c08e2c7f1808eb689365af344843f3a481",
+      "hash": "b5a8a1ba034025e5cddc0eee442ccdc5ec8f6cbfbcdac86d006a2eff8f28d1ac"
+    },
+    {
+      "index": 179,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:36:27.039Z",
+      "payload": {
+        "cycle": 20
+      },
+      "prev_hash": "b5a8a1ba034025e5cddc0eee442ccdc5ec8f6cbfbcdac86d006a2eff8f28d1ac",
+      "hash": "da9319ea0fa8d092b5b30058b3eecef3c0e52ee19e52cc87e041461ecd12e9ca"
+    },
+    {
+      "index": 180,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:36:27.056Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "da9319ea0fa8d092b5b30058b3eecef3c0e52ee19e52cc87e041461ecd12e9ca",
+      "hash": "5295d0215710565c9d464380af4623a9c1180f563610b6d098c3f2cd01672166"
+    },
+    {
+      "index": 181,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:36:30.271Z",
+      "payload": {
+        "cycle": 20,
+        "indicator_ms": 3208
+      },
+      "prev_hash": "5295d0215710565c9d464380af4623a9c1180f563610b6d098c3f2cd01672166",
+      "hash": "0c33c8a0d79ee87d743c656cdd4665ce42cb119e3e98fa476c10d37a390c2d70"
+    },
+    {
+      "index": 182,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:36:35.288Z",
+      "payload": {
+        "cycle": 21
+      },
+      "prev_hash": "0c33c8a0d79ee87d743c656cdd4665ce42cb119e3e98fa476c10d37a390c2d70",
+      "hash": "d04a357c66162a9a887ae3a9bc25ef10749dc371133f86a39a934d0b3df23a8f"
+    },
+    {
+      "index": 183,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:36:35.438Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "d04a357c66162a9a887ae3a9bc25ef10749dc371133f86a39a934d0b3df23a8f",
+      "hash": "c7e6b96427f2ab6c6ea5a7b2f93645e81d2af81141f5e605ac6f60cdfbe01e89"
+    },
+    {
+      "index": 184,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:36:38.779Z",
+      "payload": {
+        "cycle": 21,
+        "indicator_ms": 3234
+      },
+      "prev_hash": "c7e6b96427f2ab6c6ea5a7b2f93645e81d2af81141f5e605ac6f60cdfbe01e89",
+      "hash": "e70160da4991da071cf19200c04fde1dce037909979b0dda32b9831c68a187bb"
+    },
+    {
+      "index": 185,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:36:43.870Z",
+      "payload": {
+        "cycle": 22
+      },
+      "prev_hash": "e70160da4991da071cf19200c04fde1dce037909979b0dda32b9831c68a187bb",
+      "hash": "f13f7c7980c1bf69274f6d97e18655fcaffc98f212d88338525174c4f88c7365"
+    },
+    {
+      "index": 186,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:36:43.882Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "f13f7c7980c1bf69274f6d97e18655fcaffc98f212d88338525174c4f88c7365",
+      "hash": "18f3d150f708cec6b6499a08f7c5320a41a8b01766b36ba7bf6aaac46d2f54f4"
+    },
+    {
+      "index": 187,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:36:47.101Z",
+      "payload": {
+        "cycle": 22,
+        "indicator_ms": 3209
+      },
+      "prev_hash": "18f3d150f708cec6b6499a08f7c5320a41a8b01766b36ba7bf6aaac46d2f54f4",
+      "hash": "31d01a32178412813129fd7e40022f2448873079e994950d876365a37403d27b"
+    },
+    {
+      "index": 188,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:36:52.119Z",
+      "payload": {
+        "cycle": 23
+      },
+      "prev_hash": "31d01a32178412813129fd7e40022f2448873079e994950d876365a37403d27b",
+      "hash": "b7c9e9d04be4ee2978197fd0c7ae8da3b3d390eb32e1934fe2669df8d6e9d79e"
+    },
+    {
+      "index": 189,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:36:52.126Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "b7c9e9d04be4ee2978197fd0c7ae8da3b3d390eb32e1934fe2669df8d6e9d79e",
+      "hash": "b507361499cb7f577c33828ad60eb44259d7d92b84a399dfca30176f0f0dac08"
+    },
+    {
+      "index": 190,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:36:55.391Z",
+      "payload": {
+        "cycle": 23,
+        "indicator_ms": 3259
+      },
+      "prev_hash": "b507361499cb7f577c33828ad60eb44259d7d92b84a399dfca30176f0f0dac08",
+      "hash": "f410c87fd7fb56c238ea0e8b294a594f30d40d8facc4df60bfae88fa27599a6d"
+    },
+    {
+      "index": 191,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:37:00.403Z",
+      "payload": {
+        "cycle": 24
+      },
+      "prev_hash": "f410c87fd7fb56c238ea0e8b294a594f30d40d8facc4df60bfae88fa27599a6d",
+      "hash": "f1034a457ba447832826376658a5547e0f87938a83302be4fcb6de36ead7eaeb"
+    },
+    {
+      "index": 192,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:37:00.420Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "f1034a457ba447832826376658a5547e0f87938a83302be4fcb6de36ead7eaeb",
+      "hash": "57aa70a508b7c5e6f51c21352d38f478197438b7f38517af903a4e35edc651f2"
+    },
+    {
+      "index": 193,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:37:03.623Z",
+      "payload": {
+        "cycle": 24,
+        "indicator_ms": 3195
+      },
+      "prev_hash": "57aa70a508b7c5e6f51c21352d38f478197438b7f38517af903a4e35edc651f2",
+      "hash": "0d3c0d3a0507f6357dbce06ee975455170613907b703ab455ed28ee6956b3b75"
+    },
+    {
+      "index": 194,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:37:08.641Z",
+      "payload": {
+        "cycle": 25
+      },
+      "prev_hash": "0d3c0d3a0507f6357dbce06ee975455170613907b703ab455ed28ee6956b3b75",
+      "hash": "df391b08be84ccd83d49b6bcf876684a8def01909cbd913cb7511a1f5c93c0fa"
+    },
+    {
+      "index": 195,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:37:08.652Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "df391b08be84ccd83d49b6bcf876684a8def01909cbd913cb7511a1f5c93c0fa",
+      "hash": "e45bc125fc918338a0e14a674a94a9e4294414c1168bca601722e036f3cdde94"
+    },
+    {
+      "index": 196,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:37:11.866Z",
+      "payload": {
+        "cycle": 25,
+        "indicator_ms": 3207
+      },
+      "prev_hash": "e45bc125fc918338a0e14a674a94a9e4294414c1168bca601722e036f3cdde94",
+      "hash": "ef5f6d51b93380531629285e59ed9bd70dbfd9205518c8380b2ca7bccffd91e2"
+    },
+    {
+      "index": 197,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:37:16.883Z",
+      "payload": {
+        "cycle": 26
+      },
+      "prev_hash": "ef5f6d51b93380531629285e59ed9bd70dbfd9205518c8380b2ca7bccffd91e2",
+      "hash": "f542b722808b538f41a7fa04749600840fe0e74b6907210932d45add2d00acfa"
+    },
+    {
+      "index": 198,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:37:16.897Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "f542b722808b538f41a7fa04749600840fe0e74b6907210932d45add2d00acfa",
+      "hash": "57c6a94d384006497fab7a849c20cd111b05c77022fb62d86773ce47489d3c73"
+    },
+    {
+      "index": 199,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:37:20.142Z",
+      "payload": {
+        "cycle": 26,
+        "indicator_ms": 3239
+      },
+      "prev_hash": "57c6a94d384006497fab7a849c20cd111b05c77022fb62d86773ce47489d3c73",
+      "hash": "feef489b0376a67a79558cd5a9b736734c9076ecab7b92bae54384d9fe4f1ac7"
+    },
+    {
+      "index": 200,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:37:25.158Z",
+      "payload": {
+        "cycle": 27
+      },
+      "prev_hash": "feef489b0376a67a79558cd5a9b736734c9076ecab7b92bae54384d9fe4f1ac7",
+      "hash": "e6c9b3ebfe877268acef669ff412ff9d85311e012ff6a226a6c40b722d1ddc13"
+    },
+    {
+      "index": 201,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:37:25.172Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "e6c9b3ebfe877268acef669ff412ff9d85311e012ff6a226a6c40b722d1ddc13",
+      "hash": "ae41aa76dd65358163c77ec439d73630274cb45ca5e5a365a1621deeffe40c9d"
+    },
+    {
+      "index": 202,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:37:28.386Z",
+      "payload": {
+        "cycle": 27,
+        "indicator_ms": 3203
+      },
+      "prev_hash": "ae41aa76dd65358163c77ec439d73630274cb45ca5e5a365a1621deeffe40c9d",
+      "hash": "8c03ba996eb5f9f3c7765c93079f0bb2d2c6a21a50ac3f91711727d9c573fae0"
+    },
+    {
+      "index": 203,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:37:33.403Z",
+      "payload": {
+        "cycle": 28
+      },
+      "prev_hash": "8c03ba996eb5f9f3c7765c93079f0bb2d2c6a21a50ac3f91711727d9c573fae0",
+      "hash": "a9bd80d271f9016919e8e9952db50f11687357de2661646de6da8949a3b31a46"
+    },
+    {
+      "index": 204,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:37:33.425Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "a9bd80d271f9016919e8e9952db50f11687357de2661646de6da8949a3b31a46",
+      "hash": "4daf54836326818d4558038a5e362391d2d67dbb8142158e4cdfbb29cc1c05ab"
+    },
+    {
+      "index": 205,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:37:36.647Z",
+      "payload": {
+        "cycle": 28,
+        "indicator_ms": 3216
+      },
+      "prev_hash": "4daf54836326818d4558038a5e362391d2d67dbb8142158e4cdfbb29cc1c05ab",
+      "hash": "7a5c4394152003a86af568ca1e5131a4365f11141b30a805823a53ae249b5cd7"
+    },
+    {
+      "index": 206,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:37:41.663Z",
+      "payload": {
+        "cycle": 29
+      },
+      "prev_hash": "7a5c4394152003a86af568ca1e5131a4365f11141b30a805823a53ae249b5cd7",
+      "hash": "e5c2d982e3a789814cca2c16c9b48ad3f978845d4ab61f7220d54feb4b71d313"
+    },
+    {
+      "index": 207,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:37:41.677Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "e5c2d982e3a789814cca2c16c9b48ad3f978845d4ab61f7220d54feb4b71d313",
+      "hash": "71e9046f8e44cf51082414c1c29e0476b730caa18bd68f9d79c131cc71d7b033"
+    },
+    {
+      "index": 208,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:37:44.904Z",
+      "payload": {
+        "cycle": 29,
+        "indicator_ms": 3220
+      },
+      "prev_hash": "71e9046f8e44cf51082414c1c29e0476b730caa18bd68f9d79c131cc71d7b033",
+      "hash": "36a46e9d57ad0f63288b2435c7cc46378abc2b519814ec3ba3655f571b18d943"
+    },
+    {
+      "index": 209,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:37:49.920Z",
+      "payload": {
+        "cycle": 30
+      },
+      "prev_hash": "36a46e9d57ad0f63288b2435c7cc46378abc2b519814ec3ba3655f571b18d943",
+      "hash": "e44f0e31f3c4fc1a315f9a9ba5f385cf58773783f5a5c3af60603a969945afaf"
+    },
+    {
+      "index": 210,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:37:49.935Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "e44f0e31f3c4fc1a315f9a9ba5f385cf58773783f5a5c3af60603a969945afaf",
+      "hash": "87324d714703f348649a282304647922ab448b065a3688b38efe2dd182f309ba"
+    },
+    {
+      "index": 211,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:37:53.147Z",
+      "payload": {
+        "cycle": 30,
+        "indicator_ms": 3204
+      },
+      "prev_hash": "87324d714703f348649a282304647922ab448b065a3688b38efe2dd182f309ba",
+      "hash": "ee979fa270fad7cf106c23b1c2a444c6488c0eea5109f085c537d4080b798cb2"
+    },
+    {
+      "index": 212,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:37:58.167Z",
+      "payload": {
+        "cycle": 31
+      },
+      "prev_hash": "ee979fa270fad7cf106c23b1c2a444c6488c0eea5109f085c537d4080b798cb2",
+      "hash": "37949628157ab507807b389ffedd0aba29e0316f4c8ef59c11c7a54845926b9c"
+    },
+    {
+      "index": 213,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:37:58.182Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "37949628157ab507807b389ffedd0aba29e0316f4c8ef59c11c7a54845926b9c",
+      "hash": "3e02738c4bdf2fcf5735c38e962b2661f5c189b7d0d5fbfda7233cd90780cc42"
+    },
+    {
+      "index": 214,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:38:01.416Z",
+      "payload": {
+        "cycle": 31,
+        "indicator_ms": 3226
+      },
+      "prev_hash": "3e02738c4bdf2fcf5735c38e962b2661f5c189b7d0d5fbfda7233cd90780cc42",
+      "hash": "001c04d6511e73efc75a64223473ac835a67eb5c26af8726337d89cc82a13ab0"
+    },
+    {
+      "index": 215,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:38:06.440Z",
+      "payload": {
+        "cycle": 32
+      },
+      "prev_hash": "001c04d6511e73efc75a64223473ac835a67eb5c26af8726337d89cc82a13ab0",
+      "hash": "1986fef45ec7be4470e02b7246be844493ce7709cdd391970d774f7886f2589f"
+    },
+    {
+      "index": 216,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:38:06.455Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "1986fef45ec7be4470e02b7246be844493ce7709cdd391970d774f7886f2589f",
+      "hash": "b619032bf949ac6164a9abd80ff08e113240335c453d4bfb06fb421923295bcf"
+    },
+    {
+      "index": 217,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:38:09.696Z",
+      "payload": {
+        "cycle": 32,
+        "indicator_ms": 3235
+      },
+      "prev_hash": "b619032bf949ac6164a9abd80ff08e113240335c453d4bfb06fb421923295bcf",
+      "hash": "3966d2987982d94fcf8d8c106333496dd3abc2b24978c91662a525299a710791"
+    },
+    {
+      "index": 218,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:38:14.721Z",
+      "payload": {
+        "cycle": 33
+      },
+      "prev_hash": "3966d2987982d94fcf8d8c106333496dd3abc2b24978c91662a525299a710791",
+      "hash": "71287987cc2d0d96b912e9d89c3c5cba0ac6fbb648d14e43aa593d18d7c2155b"
+    },
+    {
+      "index": 219,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:38:14.731Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "71287987cc2d0d96b912e9d89c3c5cba0ac6fbb648d14e43aa593d18d7c2155b",
+      "hash": "71132d630ec2f260118f5316d996739d9df51e40f068e23e4b4418ec431659e2"
+    },
+    {
+      "index": 220,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:38:18.003Z",
+      "payload": {
+        "cycle": 33,
+        "indicator_ms": 3263
+      },
+      "prev_hash": "71132d630ec2f260118f5316d996739d9df51e40f068e23e4b4418ec431659e2",
+      "hash": "cf78c0a7fb55fb32a00aeff0d907833c7f4e2f8ba0938460d84574de40581aa8"
+    },
+    {
+      "index": 221,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:38:23.015Z",
+      "payload": {
+        "cycle": 34
+      },
+      "prev_hash": "cf78c0a7fb55fb32a00aeff0d907833c7f4e2f8ba0938460d84574de40581aa8",
+      "hash": "fa2a6014ec2409aff047ce8cbb2676ee7e30bfe0dd9619086396566075dbcc06"
+    },
+    {
+      "index": 222,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:38:23.031Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "fa2a6014ec2409aff047ce8cbb2676ee7e30bfe0dd9619086396566075dbcc06",
+      "hash": "ddf6e2423b940c1d804299b967541ab3ed7eef374bac1723eae8a9576a17f979"
+    },
+    {
+      "index": 223,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:38:26.263Z",
+      "payload": {
+        "cycle": 34,
+        "indicator_ms": 3224
+      },
+      "prev_hash": "ddf6e2423b940c1d804299b967541ab3ed7eef374bac1723eae8a9576a17f979",
+      "hash": "30bcb0d7a10989670b2d0922d1910c4923e95e0419b906a68bc0376b368feade"
+    },
+    {
+      "index": 224,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:38:31.288Z",
+      "payload": {
+        "cycle": 35
+      },
+      "prev_hash": "30bcb0d7a10989670b2d0922d1910c4923e95e0419b906a68bc0376b368feade",
+      "hash": "b08b1bf2d1c5828268198d00c3aadec15173b0b8e4cbd10b4c65657ab7ee8bfd"
+    },
+    {
+      "index": 225,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:38:31.297Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "b08b1bf2d1c5828268198d00c3aadec15173b0b8e4cbd10b4c65657ab7ee8bfd",
+      "hash": "5c7d3fb52abf3691ca6b471d1e75d57d17b5e518f43d457e44205ea46227dfb3"
+    },
+    {
+      "index": 226,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:38:34.492Z",
+      "payload": {
+        "cycle": 35,
+        "indicator_ms": 3186
+      },
+      "prev_hash": "5c7d3fb52abf3691ca6b471d1e75d57d17b5e518f43d457e44205ea46227dfb3",
+      "hash": "af30a16ea54ccb35a72c7742fa4de54478b87e9fd62751ef8ac85081bff8507a"
+    },
+    {
+      "index": 227,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:38:39.511Z",
+      "payload": {
+        "cycle": 36
+      },
+      "prev_hash": "af30a16ea54ccb35a72c7742fa4de54478b87e9fd62751ef8ac85081bff8507a",
+      "hash": "c432495377470b3fa122429f46578ad0ef5c4cacc239b5a129e0bf78edc76b04"
+    },
+    {
+      "index": 228,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:38:39.518Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "c432495377470b3fa122429f46578ad0ef5c4cacc239b5a129e0bf78edc76b04",
+      "hash": "fa62048378edffb22334c3f8374c8c930ea79ca1fc0521471ef1d4d7b5355127"
+    },
+    {
+      "index": 229,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:38:42.761Z",
+      "payload": {
+        "cycle": 36,
+        "indicator_ms": 3236
+      },
+      "prev_hash": "fa62048378edffb22334c3f8374c8c930ea79ca1fc0521471ef1d4d7b5355127",
+      "hash": "e441e552ac1c2d24cdb9a36faa2c38462edb4fe2935da5c16e7c7840a9a7b959"
+    },
+    {
+      "index": 230,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:38:47.778Z",
+      "payload": {
+        "cycle": 37
+      },
+      "prev_hash": "e441e552ac1c2d24cdb9a36faa2c38462edb4fe2935da5c16e7c7840a9a7b959",
+      "hash": "690aedc42ce037136b6bbe06142222d9a09501464abf137f89f3f50e3c09cb80"
+    },
+    {
+      "index": 231,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:38:47.803Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "690aedc42ce037136b6bbe06142222d9a09501464abf137f89f3f50e3c09cb80",
+      "hash": "a46d2a1664e43df92d581a5a00ceaa138dabf0580d990e912871c85fb3e71de7"
+    },
+    {
+      "index": 232,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:38:51.011Z",
+      "payload": {
+        "cycle": 37,
+        "indicator_ms": 3198
+      },
+      "prev_hash": "a46d2a1664e43df92d581a5a00ceaa138dabf0580d990e912871c85fb3e71de7",
+      "hash": "d92693c9d2ecd8f582c80384693217a1f481ea56a9385b35c7c4267cd52eebc0"
+    },
+    {
+      "index": 233,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:38:56.029Z",
+      "payload": {
+        "cycle": 38
+      },
+      "prev_hash": "d92693c9d2ecd8f582c80384693217a1f481ea56a9385b35c7c4267cd52eebc0",
+      "hash": "fe4a73cc758a746cdd8625fd4d2c9df5af84e782620dd95f3069263bde3baab0"
+    },
+    {
+      "index": 234,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:38:56.044Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "fe4a73cc758a746cdd8625fd4d2c9df5af84e782620dd95f3069263bde3baab0",
+      "hash": "65c5e7b47e09a20646c5004e2886b8800b4610b9567856790c347833c2d03864"
+    },
+    {
+      "index": 235,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:38:59.494Z",
+      "payload": {
+        "cycle": 38,
+        "indicator_ms": 3442
+      },
+      "prev_hash": "65c5e7b47e09a20646c5004e2886b8800b4610b9567856790c347833c2d03864",
+      "hash": "378599aa0a60109c6d4c2a216e2071d6e4741eab2f47c7e845af3e54f33ede23"
+    },
+    {
+      "index": 236,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:39:04.513Z",
+      "payload": {
+        "cycle": 39
+      },
+      "prev_hash": "378599aa0a60109c6d4c2a216e2071d6e4741eab2f47c7e845af3e54f33ede23",
+      "hash": "0c65da614a862669804895a66aa07f5501bb2e7b664f8c9772c11c7ab7988c6b"
+    },
+    {
+      "index": 237,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:39:04.532Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "0c65da614a862669804895a66aa07f5501bb2e7b664f8c9772c11c7ab7988c6b",
+      "hash": "662c824630101f299d22a0cf01d5ed8fc02b6f86b4fb430b2cc32f20fad10f5a"
+    },
+    {
+      "index": 238,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:39:07.771Z",
+      "payload": {
+        "cycle": 39,
+        "indicator_ms": 3231
+      },
+      "prev_hash": "662c824630101f299d22a0cf01d5ed8fc02b6f86b4fb430b2cc32f20fad10f5a",
+      "hash": "52b1808df07eb26dc8d37c3db2048f7c8b302736ffadcbf5d7392164fb27d764"
+    },
+    {
+      "index": 239,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:39:12.782Z",
+      "payload": {
+        "cycle": 40
+      },
+      "prev_hash": "52b1808df07eb26dc8d37c3db2048f7c8b302736ffadcbf5d7392164fb27d764",
+      "hash": "26d9cee9ed96cbb61b1da5fd3bab9fac81b2b0a77af2765be1646c8910ce2ba2"
+    },
+    {
+      "index": 240,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:39:12.799Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "26d9cee9ed96cbb61b1da5fd3bab9fac81b2b0a77af2765be1646c8910ce2ba2",
+      "hash": "fee612488db1d8cfb82d4b70b14663ce597054da6a06730b7f78e387d542d967"
+    },
+    {
+      "index": 241,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:39:16.031Z",
+      "payload": {
+        "cycle": 40,
+        "indicator_ms": 3225
+      },
+      "prev_hash": "fee612488db1d8cfb82d4b70b14663ce597054da6a06730b7f78e387d542d967",
+      "hash": "baf083561c06515c1cdcb45929f839878059ae047dff9387ff2589c0f5b0a523"
+    },
+    {
+      "index": 242,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:39:21.047Z",
+      "payload": {
+        "cycle": 41
+      },
+      "prev_hash": "baf083561c06515c1cdcb45929f839878059ae047dff9387ff2589c0f5b0a523",
+      "hash": "017f5795117993b46b580ee5dd1ec8929fb1becebfd43c699cb9c8a90d0b60e5"
+    },
+    {
+      "index": 243,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:39:21.064Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "017f5795117993b46b580ee5dd1ec8929fb1becebfd43c699cb9c8a90d0b60e5",
+      "hash": "2db302c47771c08823091f8b2814450d1852cd5779a23f1002c184a6092e15a7"
+    },
+    {
+      "index": 244,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:39:22.809Z",
+      "payload": {
+        "cycle": 41,
+        "indicator_ms": 1736
+      },
+      "prev_hash": "2db302c47771c08823091f8b2814450d1852cd5779a23f1002c184a6092e15a7",
+      "hash": "f9b76d6189bb3ede0a9481667524ab2f47d47fd17072562bf6a39a7509a4dbde"
+    },
+    {
+      "index": 245,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:39:27.832Z",
+      "payload": {
+        "cycle": 42
+      },
+      "prev_hash": "f9b76d6189bb3ede0a9481667524ab2f47d47fd17072562bf6a39a7509a4dbde",
+      "hash": "978be13f43dcac5f3908a32968d7a103bdb681805b3f52d25fa4db2617c00c20"
+    },
+    {
+      "index": 246,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:39:27.854Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "978be13f43dcac5f3908a32968d7a103bdb681805b3f52d25fa4db2617c00c20",
+      "hash": "45b7436955a89126a61f4dd10d05d29d3013441e202ff53a68bb24810c42da0e"
+    },
+    {
+      "index": 247,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:39:31.090Z",
+      "payload": {
+        "cycle": 42,
+        "indicator_ms": 3227
+      },
+      "prev_hash": "45b7436955a89126a61f4dd10d05d29d3013441e202ff53a68bb24810c42da0e",
+      "hash": "5fd2074b7ab66f33ba0817a8b9b67364b37c1e04ebe26c7f11b05329953de5e6"
+    },
+    {
+      "index": 248,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:39:36.108Z",
+      "payload": {
+        "cycle": 43
+      },
+      "prev_hash": "5fd2074b7ab66f33ba0817a8b9b67364b37c1e04ebe26c7f11b05329953de5e6",
+      "hash": "cfa3307d342146255103bc23ee67446e822609f369611ece63aaa7b5012918bc"
+    },
+    {
+      "index": 249,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:39:36.125Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "cfa3307d342146255103bc23ee67446e822609f369611ece63aaa7b5012918bc",
+      "hash": "552eb55e91355c7fae3e53b66bfaa4e572fda07a8860c9d6e1ecfa9478991683"
+    },
+    {
+      "index": 250,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:39:39.343Z",
+      "payload": {
+        "cycle": 43,
+        "indicator_ms": 3210
+      },
+      "prev_hash": "552eb55e91355c7fae3e53b66bfaa4e572fda07a8860c9d6e1ecfa9478991683",
+      "hash": "1e4273a523ac06279d4b4b99c9a6bbdcf23c8985a026e38b398e2b36d7f81c5d"
+    },
+    {
+      "index": 251,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:39:44.363Z",
+      "payload": {
+        "cycle": 44
+      },
+      "prev_hash": "1e4273a523ac06279d4b4b99c9a6bbdcf23c8985a026e38b398e2b36d7f81c5d",
+      "hash": "0e1522e5641e1b0a0eada6d849cfb516eea44ee711e1a6d8cf86e50849f7dfb0"
+    },
+    {
+      "index": 252,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:39:44.381Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "0e1522e5641e1b0a0eada6d849cfb516eea44ee711e1a6d8cf86e50849f7dfb0",
+      "hash": "3ea64c30ce681c6537c1214b5dfda15c3236e97aa4aaff4aaa8e42ba26df531e"
+    },
+    {
+      "index": 253,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:39:47.578Z",
+      "payload": {
+        "cycle": 44,
+        "indicator_ms": 3189
+      },
+      "prev_hash": "3ea64c30ce681c6537c1214b5dfda15c3236e97aa4aaff4aaa8e42ba26df531e",
+      "hash": "4fe3cd2e59e6b8b80659934b547358e4537102b8d3031f8a2f83ae8b420315de"
+    },
+    {
+      "index": 254,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:39:52.596Z",
+      "payload": {
+        "cycle": 45
+      },
+      "prev_hash": "4fe3cd2e59e6b8b80659934b547358e4537102b8d3031f8a2f83ae8b420315de",
+      "hash": "eecf8698753192e2917afebf5f992b6538cb4d62bb0099c324edafa303b45875"
+    },
+    {
+      "index": 255,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:39:52.613Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "eecf8698753192e2917afebf5f992b6538cb4d62bb0099c324edafa303b45875",
+      "hash": "158bd0edfe87ec2e475c0633a7c4750ad86f396d77c2ee1f9e5db73a31cc5faa"
+    },
+    {
+      "index": 256,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:39:55.860Z",
+      "payload": {
+        "cycle": 45,
+        "indicator_ms": 3239
+      },
+      "prev_hash": "158bd0edfe87ec2e475c0633a7c4750ad86f396d77c2ee1f9e5db73a31cc5faa",
+      "hash": "2c39d60ce14df64b30b52f21c6452965bce9b73fca4feb44dc5e013b56cecb75"
+    },
+    {
+      "index": 257,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:40:00.892Z",
+      "payload": {
+        "cycle": 46
+      },
+      "prev_hash": "2c39d60ce14df64b30b52f21c6452965bce9b73fca4feb44dc5e013b56cecb75",
+      "hash": "cb4cfecb8ab1bcd1f2396ea067a45c00364c7e52ee3cc29c9c1c77cd1255a874"
+    },
+    {
+      "index": 258,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:40:00.909Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "cb4cfecb8ab1bcd1f2396ea067a45c00364c7e52ee3cc29c9c1c77cd1255a874",
+      "hash": "ebd974309adb7de2540eaa7a09c5ec3d59fced4e6ae7e8ad24775e4af2d3a842"
+    },
+    {
+      "index": 259,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:40:04.164Z",
+      "payload": {
+        "cycle": 46,
+        "indicator_ms": 3247
+      },
+      "prev_hash": "ebd974309adb7de2540eaa7a09c5ec3d59fced4e6ae7e8ad24775e4af2d3a842",
+      "hash": "c92e5c3a06def6feafcf90cb66ada5a0cbb80e6887654e9f4fc062a375311df1"
+    },
+    {
+      "index": 260,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:40:09.186Z",
+      "payload": {
+        "cycle": 47
+      },
+      "prev_hash": "c92e5c3a06def6feafcf90cb66ada5a0cbb80e6887654e9f4fc062a375311df1",
+      "hash": "77ff0b3dde708e3470a00985fe221ec2a8932058900739aa018bce84d60a6efc"
+    },
+    {
+      "index": 261,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:40:09.204Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "77ff0b3dde708e3470a00985fe221ec2a8932058900739aa018bce84d60a6efc",
+      "hash": "b0689b85e87894bd89809f5db4f37ac0d16a7c06a1e0da20bd63c7d60cd67505"
+    },
+    {
+      "index": 262,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:40:12.422Z",
+      "payload": {
+        "cycle": 47,
+        "indicator_ms": 3210
+      },
+      "prev_hash": "b0689b85e87894bd89809f5db4f37ac0d16a7c06a1e0da20bd63c7d60cd67505",
+      "hash": "34b7e74ab344da3c01bb38f8936f13ecc86e2b83a1cfeb4f37c080685984ca82"
+    },
+    {
+      "index": 263,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:40:17.441Z",
+      "payload": {
+        "cycle": 48
+      },
+      "prev_hash": "34b7e74ab344da3c01bb38f8936f13ecc86e2b83a1cfeb4f37c080685984ca82",
+      "hash": "e5154ff73010f70f20059ccfdafa5a5e976c798b7bc4fb4317f35b70074e6aa3"
+    },
+    {
+      "index": 264,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:40:17.465Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "e5154ff73010f70f20059ccfdafa5a5e976c798b7bc4fb4317f35b70074e6aa3",
+      "hash": "72469e117925b90cdce00e093e1c5a9d4200dd91ea9e56f14adea940f48c5d0f"
+    },
+    {
+      "index": 265,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:40:20.670Z",
+      "payload": {
+        "cycle": 48,
+        "indicator_ms": 3196
+      },
+      "prev_hash": "72469e117925b90cdce00e093e1c5a9d4200dd91ea9e56f14adea940f48c5d0f",
+      "hash": "bcfd980293228a7472db12f61fbb327ddbfb7180609b8b88d68190d58420ed7b"
+    },
+    {
+      "index": 266,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:40:25.694Z",
+      "payload": {
+        "cycle": 49
+      },
+      "prev_hash": "bcfd980293228a7472db12f61fbb327ddbfb7180609b8b88d68190d58420ed7b",
+      "hash": "54c29ff305cbe2d572910a273345528cfdcd9d250a09d5b61db0424f22490040"
+    },
+    {
+      "index": 267,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:40:25.710Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "54c29ff305cbe2d572910a273345528cfdcd9d250a09d5b61db0424f22490040",
+      "hash": "ea743bb25653446559666c33f4df96c8c187b2d041095d34310e2c9216e8d6d7"
+    },
+    {
+      "index": 268,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:40:28.921Z",
+      "payload": {
+        "cycle": 49,
+        "indicator_ms": 3202
+      },
+      "prev_hash": "ea743bb25653446559666c33f4df96c8c187b2d041095d34310e2c9216e8d6d7",
+      "hash": "a411a730058cdc932c57b2d051707f8b8d70d00c5d32eacd5d60a029a4673332"
+    },
+    {
+      "index": 269,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:40:33.940Z",
+      "payload": {
+        "cycle": 50
+      },
+      "prev_hash": "a411a730058cdc932c57b2d051707f8b8d70d00c5d32eacd5d60a029a4673332",
+      "hash": "570f7a737cea3048542ca8819a1acf4fb016c8c60ac4d532dfcd8439daf6f7ee"
+    },
+    {
+      "index": 270,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:40:33.964Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "570f7a737cea3048542ca8819a1acf4fb016c8c60ac4d532dfcd8439daf6f7ee",
+      "hash": "30ba85a2286c272cbc77926d4bc9ee8139a9b57a9f4def40cc131695a7fb00af"
+    },
+    {
+      "index": 271,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:40:34.750Z",
+      "payload": {
+        "cycle": 50,
+        "indicator_ms": 779
+      },
+      "prev_hash": "30ba85a2286c272cbc77926d4bc9ee8139a9b57a9f4def40cc131695a7fb00af",
+      "hash": "4e0ea8a323d7c2d7e26e55195268124cc905d2aa4dbce64e787da2e81f159b87"
+    },
+    {
+      "index": 272,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:40:39.767Z",
+      "payload": {
+        "cycle": 51
+      },
+      "prev_hash": "4e0ea8a323d7c2d7e26e55195268124cc905d2aa4dbce64e787da2e81f159b87",
+      "hash": "45130e7c7f5a51d9edaee098a18c5fb49802903cf730cd3af02793d01124519d"
+    },
+    {
+      "index": 273,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:40:39.798Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "45130e7c7f5a51d9edaee098a18c5fb49802903cf730cd3af02793d01124519d",
+      "hash": "e6603d5ff47653febb114cac4f3f8ee455284fa4bf948500c91160e640def0e9"
+    },
+    {
+      "index": 274,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:40:43.035Z",
+      "payload": {
+        "cycle": 51,
+        "indicator_ms": 3229
+      },
+      "prev_hash": "e6603d5ff47653febb114cac4f3f8ee455284fa4bf948500c91160e640def0e9",
+      "hash": "bbc646b49a253522571dcd51d1c5db87cff0d16e75a4046c38ec1279a90320c6"
+    },
+    {
+      "index": 275,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:40:48.061Z",
+      "payload": {
+        "cycle": 52
+      },
+      "prev_hash": "bbc646b49a253522571dcd51d1c5db87cff0d16e75a4046c38ec1279a90320c6",
+      "hash": "2fb448ddbcd0d2b9d2c458a8fb32374025e02025bbf9d0eb41e0e8455ebdd83b"
+    },
+    {
+      "index": 276,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:40:48.077Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "2fb448ddbcd0d2b9d2c458a8fb32374025e02025bbf9d0eb41e0e8455ebdd83b",
+      "hash": "2006f8ea0a2787595af9f145550b7056a559cb1caaca00455dc92b27ae78d451"
+    },
+    {
+      "index": 277,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:40:51.334Z",
+      "payload": {
+        "cycle": 52,
+        "indicator_ms": 3250
+      },
+      "prev_hash": "2006f8ea0a2787595af9f145550b7056a559cb1caaca00455dc92b27ae78d451",
+      "hash": "dd58da88dc57d6ecd1bb012b28e7ee160679e62febde20526040a5aaefed8b17"
+    },
+    {
+      "index": 278,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:40:56.352Z",
+      "payload": {
+        "cycle": 53
+      },
+      "prev_hash": "dd58da88dc57d6ecd1bb012b28e7ee160679e62febde20526040a5aaefed8b17",
+      "hash": "b072d44ec9e07b451f99e9fc7c51c271651915912e8a8d65434653ebf71e4f38"
+    },
+    {
+      "index": 279,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:40:56.370Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "b072d44ec9e07b451f99e9fc7c51c271651915912e8a8d65434653ebf71e4f38",
+      "hash": "5552319d74f6f361613660f25d0da96f6a66c0e14fde22840b188fd31a650415"
+    },
+    {
+      "index": 280,
+      "event": "no_signal",
+      "timestamp": "2026-09-13T01:40:59.578Z",
+      "payload": {
+        "cycle": 53,
+        "indicator_ms": 3200
+      },
+      "prev_hash": "5552319d74f6f361613660f25d0da96f6a66c0e14fde22840b188fd31a650415",
+      "hash": "cf9a6b2b2bb0b8dfbeb8ad0c947f19bc3289ce4014a3d723d74e459a2d29d15e"
+    },
+    {
+      "index": 281,
+      "event": "cycle_start",
+      "timestamp": "2026-09-13T01:41:04.596Z",
+      "payload": {
+        "cycle": 54
+      },
+      "prev_hash": "cf9a6b2b2bb0b8dfbeb8ad0c947f19bc3289ce4014a3d723d74e459a2d29d15e",
+      "hash": "275b320e974eb2d8dd649d5cdbddf7b116a5cab9aa3d6e254f1b7dc2feb7ecc1"
+    },
+    {
+      "index": 282,
+      "event": "external_text_sanitized",
+      "timestamp": "2026-09-13T01:41:04.613Z",
+      "payload": {
+        "source": "none",
+        "threats": 0,
+        "modified": false
+      },
+      "prev_hash": "275b320e974eb2d8dd649d5cdbddf7b116a5cab9aa3d6e254f1b7dc2feb7ecc1",
+      "hash": "f33d323def8d253dbd164e9757591d937cde982ed4a7f2469c79856549cb12e1"
+    }
+  ]
+}
