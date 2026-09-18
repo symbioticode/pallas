@@ -54,5 +54,5 @@ jobs:
       # PALLAS-M20 : seuil minimal de couverture en CI via c8/v8 + vitest
       # --coverage. Seuils calibrés sous la mesure réelle du 2026-09-11
       # (vitest.config.ts) — un échec CI si on régresse, jamais un seuil
-      # fantaisiste. `--reporter=text` affiche le détail dans la sortie.
-      - run: nix-shell --run "npm ci && npm run build && npm run coverage -- --reporter=text"
+      # fantaisiste. La commande conserve les arguments validés par le run CI vert.
+      - run: nix-shell --run "npm ci && npm run build && npm run coverage"
