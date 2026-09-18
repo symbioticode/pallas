@@ -72,9 +72,14 @@ Résultats réellement observés :
 `npm ci` a également signalé 3 vulnérabilités de sévérité modérée dans l'arbre de dépendances ;
 ce signal n'a pas été masqué et n'affecte pas le résultat des suites ci-dessus.
 
-## État final attendu des branches
+## État final des branches
 
-Après publication de ce journal, `origin/main` doit pointer sur le commit qui le contient et
-contenir `46c8027` comme ancêtre. La branche distante `m37-readme-progression-review` ne doit être
-supprimée qu'après cette vérification. Sa contribution documentaire est intégrée et corrigée dans
-`main`; la branche locale correspondante peut alors être retirée.
+Le premier push du journal a placé `origin/main` sur `841bd53`; `git merge-base --is-ancestor
+46c8027 HEAD` et l'ensemble des contrôles de fichiers ont ensuite réussi (`FINAL_CHECKS=PASS`).
+La branche distante `m37-readme-progression-review` a alors été supprimée.
+
+Git refusait la suppression non forcée de `wip/m37-readme-progression` parce que son commit
+`f541c7f` n'était pas un ancêtre topologique de `main`. Avant de la retirer, son patch a été
+comparé à celui du commit intégré `2b97d0d` : les deux produisent le même patch-id stable
+`e3fbf46a764a1a15a2be328fc9eca02e05ed096b`. La branche locale M37 a donc été supprimée après cette
+preuve d'équivalence ; aucune branche locale ou distante dont le nom contient `m37` ne reste.
