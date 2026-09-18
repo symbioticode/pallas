@@ -5,7 +5,7 @@ Mission ID : PALLAS-M38
 Date de création : 2026-09-17
 Auteur / Agent : Claude — exécution par Codex
 Projet : Pallas
-Statut : ACTIF
+Statut : TERMINÉE
 Dépend de : `missions-M21-M28` (commit `43941d0` poussé, contenant le rapport final M32),
 `origin/main` (commit `5d90d92`, sain après revert PR#2 + cherry-pick `bc8905f`)
 
