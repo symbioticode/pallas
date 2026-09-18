@@ -1,5 +1,9 @@
 # Synthèse des missions PALLAS — M21 → M28
 
+> **Document historique déprécié.** Cette synthèse est conservée pour la trace de la vague
+> M21–M28 mais n'est plus mise à jour. La source d'historique courante est
+> [`PROGRESSION.md`](../../PROGRESSION.md).
+
 > Synthèse établie à partir des huit journaux de mission `docs/mission/mission-PALLAS-M{21..28}-journal.md`.
 > Elle ne remplace pas les journaux : chaque affirmation renvoie à sa mission et à sa preuve.
 

@@ -4,8 +4,9 @@ Bot de trading de marchés de prédiction pour **Polymarket uniquement** — **d
 **capital réel non autorisé** par l'état d'audit courant.
 
 Statut réel : **MVP gelé** (baseline `pallas-mvp-freeze-1`), **audit v0.6 : GO paper trading
-supervisé — NO-GO capital réel** (moyenne 3,9/5, F-11 ouverte). Une campagne de paper trading
-supervisée tourne depuis le 2026-09-13. Détails : [`PROGRESSION.md`](PROGRESSION.md),
+supervisé — NO-GO capital réel** (moyenne 3,9/5). La campagne gouvernée M32 a atteint
+72 h 00 min 08,6 s ; la fermeture de F-11 reste sous réserve d'un audit indépendant. Détails :
+[`PROGRESSION.md`](PROGRESSION.md),
 [`docs/mvp/CAPABILITIES.md`](docs/mvp/CAPABILITIES.md).
 
 ## Ce que Pallas fait
@@ -33,7 +34,7 @@ supervisée tourne depuis le 2026-09-13. Détails : [`PROGRESSION.md`](PROGRESSI
 
 ## Pourquoi le lire sérieusement (rigueur documentée)
 
-Ces points proviennent d'une **[revue externe](docs/mission/archives/mission-PALLAS-M36-jules-review.md)**,
+Ces points proviennent d'une **[revue externe vérifiée](docs/mission/mission-PALLAS-M36-jules-review-2.md)**,
 tel quel, sans introspection du projet :
 
 - **Fail-closed par conception** : dry-run par défaut dont la désactivation exige l'exacte chaîne
@@ -49,8 +50,9 @@ tel quel, sans introspection du projet :
 
 ## Réserves connues (à lire, pas à cacher)
 
-- **F-11 est ouverte** : aucune observation auditée ≥ 72 h d'une campagne continue. La plus longue
-  trace à v0.6 était ~11,8 min ; la campagne en cours est la première cible 72 h.
+- **F-11 — preuve de mission acquise, audit indépendant attendu** : la campagne gouvernée M32 a
+  atteint 72 h 00 min 08,6 s. Cette fermeture de l'exigence d'observation reste sous réserve de
+  confirmation par un audit indépendant ; elle ne change pas le NO-GO capital réel.
 - **Points d'interrogation de la revue M36** : l'ordre de build TS exige un binaire Rust
   pré-compilé (voir Démarrage) ; le sandbox `bwrap` est *skip* sur les hôtes sans netns (fail-closed
   sur l'exécution, mais protection inactive sur ces machines).

@@ -1,4 +1,4 @@
-# PALLAS — PROGRESSION et état documenté (M21 → M36)
+# PALLAS — PROGRESSION et état documenté (M21 → M38)
 
 Historique condensé et vérifiable de la montée en maturité de Pallas, à destination d'un lecteur
 externe (nouvel arrivant, évaluateur, audit). Ce document n'introspecte pas : chaque jalon cite une
@@ -9,18 +9,22 @@ Réf. baseline : tag `pallas-mvp-freeze-1` → commit `e69d7542f79ff3e6a24df6077
 
 ---
 
-## État actuel (2026-09-16)
+## État actuel (2026-09-17)
 
 - **MVP gelé** sur `pallas-mvp-freeze-1` ; documentation de capacité :
   [`docs/mvp/CAPABILITIES.md`](docs/mvp/CAPABILITIES.md) (19/19 capacités sourcées mission + audit).
 - **Audit v0.6** : **GO paper trading supervisé — NO-GO capital réel** (moyenne 3,9/5,
-  F-11 ouverte). Preuve versionnée : `git show 6605d0f:docs/AUDIT-PALLAS-v0.6.md`.
-- **Campagne supervisée en cours** : démarrée le 2026-09-13T20:37:22.562Z (journal M32, `git show
-  c40deed:docs/mission/mission-PALLAS-M32-journal.md`), ledger `supervised`, cible 72 h.
+  F-11 ouverte à la date de l'audit). Preuve :
+  [`docs/AUDIT-PALLAS-v0.6.md`](docs/AUDIT-PALLAS-v0.6.md).
+- **Campagne supervisée M32 terminée** : 72 h 00 min 08,6 s, 13 checkpoints signés, un incident
+  SIGKILL contrôlé repris en 2,018 s, zéro alerte. Rapport :
+  [`docs/OBSERVATION-M27-72h-2026-09-14.md`](docs/OBSERVATION-M27-72h-2026-09-14.md) et
+  [`journal M32`](docs/mission/mission-PALLAS-M32-journal.md).
 - **Revue externe indépendante (M36)** : tentative 1 invalidée (mauvais commit), relance vérifiée
   sur la baseline ; 3 points bloquants corrigés dans le README et 6 axes de qualité documentés.
-- **Limite transversale** : **F-11 reste ouverte** — aucune campagne ≥ 72 h n'est *auditée* à ce
-  jour. Le capital réel reste **NO-GO** dans tous les audits.
+- **Limite transversale** : l'exigence d'observation F-11 est satisfaite par la preuve de mission,
+  **sous réserve de confirmation par un audit indépendant**. Le capital réel reste **NO-GO** dans
+  tous les audits. Le pic RSS d'environ 1,06 GiB observé pendant M32 reste à investiguer.
 
 ---
 
@@ -108,16 +112,20 @@ Réf. baseline : tag `pallas-mvp-freeze-1` → commit `e69d7542f79ff3e6a24df6077
 > 4,0). **Capital réel : NO-GO** (portefeuille non autoritatif, attribution des fills heuristique,
 > aucun ack/fill live, custody incomplète). **F-11 reste OUVERT.**
 
-- Source : `git show 6605d0fe5165d59a4279969286b98400c85ee03c:docs/AUDIT-PALLAS-v0.6.md`
-  (absent du checkout, versionné en git).
+- Source : [`docs/AUDIT-PALLAS-v0.6.md`](docs/AUDIT-PALLAS-v0.6.md).
 
-### M32 — Lancement de la campagne supervisée (2026-09-13) ⭐ jalon
+### M32 — Campagne supervisée ≥72 h (2026-09-14 → 2026-09-17) ⭐ jalon
 
 - Bundle matérialisé (R-07) : 8 artefacts reconstruits au chemin canonique, **8/8 PASS** ; rejeu à
-  blanc `CT_DRY_RUN=PASS`, `verify.sh` 4/4 ; lancement réel le **2026-09-13T20:37:22.562Z**,
-  ledger `supervised`, cible 4 320 min.
-- Source : journal M32 : `git show c40deed:docs/mission/mission-PALLAS-M32-journal.md` (absent du
-  checkout, versionné en git).
+  blanc `CT_DRY_RUN=PASS`, puis lancement gouverné par `CT-2026-020-PALLAS-R1` sur le tag gelé.
+- Durée réelle : **72 h 00 min 08,6 s** (`reason=duration_reached`) ; **13 checkpoints signés**,
+  42 195 entrées ledger, un SIGKILL contrôlé absorbé en 2,018 s, zéro alerte.
+- Limite observée : RSS maximal **1 087 896 KiB (~1,06 GiB)** et final 865 472 KiB ; cette dérive
+  est un sujet d'investigation, pas un non-événement.
+- **F-11 : exigence d'observation satisfaite par M32, sous réserve de confirmation par un audit
+  indépendant.** Le NO-GO capital réel reste inchangé.
+- Sources : [`journal M32`](docs/mission/mission-PALLAS-M32-journal.md),
+  [`rapport d'observation`](docs/OBSERVATION-M27-72h-2026-09-14.md).
 
 ### M33 — UI Observatory mise à niveau (2026-09-14)
 
@@ -143,8 +151,9 @@ Réf. baseline : tag `pallas-mvp-freeze-1` → commit `e69d7542f79ff3e6a24df6077
   brutes, rigueur perçue, autres critères) + **liste nécessaire et suffisante des 3 bloquants**
   (ordre de build Rust non précisé, `PALLAS_LEDGER_MODE=dev` manquant pour la démo Observatory,
   absence de guide sans Nix) — tous trois corrigés dans le README (M37).
-- Sources : [`docs/mission/archives/mission-PALLAS-M36-jules-review.md`](docs/mission/archives/mission-PALLAS-M36-jules-review.md),
-  [`docs/mission/archives/mission-PALLAS-M36-jules-review-relance.md`](docs/mission/archives/mission-PALLAS-M36-jules-review-relance.md).
+- Source vérifiée :
+  [`docs/mission/mission-PALLAS-M36-jules-review-2.md`](docs/mission/mission-PALLAS-M36-jules-review-2.md).
+  La tentative initiale archivée est explicitement invalidée et n'est pas utilisée comme preuve.
 
 ---
 
@@ -164,7 +173,8 @@ sandbox `bwrap` sont skippés sur les hôtes sans netns (comportement documenté
 
 ## Réserves transverses (ne pas perdre de vue)
 
-- **F-11 ouverte** : pas d'observation auditée ≥ 72 h.
+- **F-11** : preuve de mission ≥72 h acquise, fermeture sous réserve de confirmation par audit
+  indépendant.
 - **Capital réel NO-GO** : portefeuille exchange non autoritatif, attribution des fills
   heuristique, aucun ack/fill live, custody et rotation plateforme incomplètes.
 - **Réconciliation** : REST/polling, pas de WebSocket utilisateur, single-flight intra-processus.
@@ -179,6 +189,7 @@ sandbox `bwrap` sont skippés sur les hôtes sans netns (comportement documenté
 
 ```bash
 git rev-parse "pallas-mvp-freeze-1^{commit}"                # e69d754… 
-git show 6605d0fe5165d59a4279969286b98400c85ee03c:docs/AUDIT-PALLAS-v0.6.md
-git show c40deed:docs/mission/mission-PALLAS-M32-journal.md
+test -f docs/AUDIT-PALLAS-v0.6.md
+test -f docs/mission/mission-PALLAS-M32-journal.md
+test -f docs/OBSERVATION-M27-72h-2026-09-14.md
 ```
